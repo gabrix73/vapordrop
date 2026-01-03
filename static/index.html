@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="robots" content="noindex, nofollow">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>VaporDrop</title>
+    <script>
+    // Simple QR Code generator - pure JS, no dependencies
+    var QR=function(){function a(a){this.mode=1,this.data=a}function b(a,b){this.typeNumber=a,this.errorCorrectLevel=b,this.modules=null,this.moduleCount=0,this.dataCache=null,this.dataList=[]}a.prototype={getLength:function(){return this.data.length},write:function(a){for(var b=0;b<this.data.length;b++)a.put(this.data.charCodeAt(b),8)}},b.prototype={addData:function(b){this.dataList.push(new a(b)),this.dataCache=null},isDark:function(a,b){return!(0>a||this.moduleCount<=a||0>b||this.moduleCount<=b)&&this.modules[a][b]},getModuleCount:function(){return this.moduleCount},make:function(){if(1>this.typeNumber){for(var a=1,b=c(this,1);40>=a;a++){var d=c(this,a);if(d>=b){this.typeNumber=a;break}}this.typeNumber=1}this.makeImpl(!1,this.getBestMaskPattern())},makeImpl:function(a,c){this.moduleCount=4*this.typeNumber+17,this.modules=new Array(this.moduleCount);for(var d=0;d<this.moduleCount;d++){this.modules[d]=new Array(this.moduleCount);for(var e=0;e<this.moduleCount;e++)this.modules[d][e]=null}this.setupPositionProbePattern(0,0),this.setupPositionProbePattern(this.moduleCount-7,0),this.setupPositionProbePattern(0,this.moduleCount-7),this.setupPositionAdjustPattern(),this.setupTimingPattern(),this.setupTypeInfo(a,c),this.typeNumber>=7&&this.setupTypeNumber(a),null==this.dataCache&&(this.dataCache=b.createData(this.typeNumber,this.errorCorrectLevel,this.dataList)),this.mapData(this.dataCache,c)},setupPositionProbePattern:function(a,b){for(var c=-1;7>=c;c++)if(!(-1>=a+c||this.moduleCount<=a+c))for(var d=-1;7>=d;d++)-1>=b+d||this.moduleCount<=b+d||(this.modules[a+c][b+d]=c>=0&&6>=c&&(0==d||6==d)||d>=0&&6>=d&&(0==c||6==c)||c>=2&&4>=c&&d>=2&&4>=d?!0:!1)},getBestMaskPattern:function(){for(var a=0,b=0,c=0;8>c;c++){this.makeImpl(!0,c);var d=this.getLostPoint();(0==c||a>d)&&(a=d,b=c)}return b},setupTimingPattern:function(){for(var a=8;a<this.moduleCount-8;a++)null==this.modules[a][6]&&(this.modules[a][6]=0==a%2);for(var b=8;b<this.moduleCount-8;b++)null==this.modules[6][b]&&(this.modules[6][b]=0==b%2)},setupPositionAdjustPattern:function(){for(var a=b.getPatternPosition(this.typeNumber),c=0;c<a.length;c++)for(var d=0;d<a.length;d++){var e=a[c],f=a[d];if(null==this.modules[e][f])for(var g=-2;2>=g;g++)for(var h=-2;2>=h;h++)this.modules[e+g][f+h]=-2==g||2==g||-2==h||2==h||0==g&&0==h?!0:!1}},setupTypeNumber:function(a){for(var c=b.getBCHTypeNumber(this.typeNumber),d=0;18>d;d++){var e=!a&&1==(c>>d&1);this.modules[Math.floor(d/3)][d%3+this.moduleCount-8-3]=e}for(var d=0;18>d;d++){var e=!a&&1==(c>>d&1);this.modules[d%3+this.moduleCount-8-3][Math.floor(d/3)]=e}},setupTypeInfo:function(a,c){for(var d=this.errorCorrectLevel<<3|c,e=b.getBCHTypeInfo(d),f=0;15>f;f++){var g=!a&&1==(e>>f&1);6>f?this.modules[f][8]=g:8>f?this.modules[f+1][8]=g:this.modules[this.moduleCount-15+f][8]=g}for(var f=0;15>f;f++){var g=!a&&1==(e>>f&1);8>f?this.modules[8][this.moduleCount-f-1]=g:9>f?this.modules[8][15-f-1+1]=g:this.modules[8][15-f-1]=g}this.modules[this.moduleCount-8][8]=!a},mapData:function(a,c){for(var d=-1,e=this.moduleCount-1,f=7,g=0,h=this.moduleCount-1;h>0;h-=2)for(6==h&&h--;;){for(var i=0;2>i;i++)if(null==this.modules[e][h-i]){var j=!1;g<a.length&&(j=1==(a[g]>>>f&1));var k=b.getMask(c,e,h-i);k&&(j=!j),this.modules[e][h-i]=j,f--,-1==f&&(g++,f=7)}if(e+=d,0>e||this.moduleCount<=e){e-=d,d=-d;break}}},getLostPoint:function(){for(var a=this.moduleCount,b=0,c=0;a>c;c++)for(var d=0;a>d;d++){for(var e=0,f=this.isDark(c,d),g=-1;1>=g;g++)if(!(0>c+g||c+g>=a))for(var h=-1;1>=h;h++)0>d+h||d+h>=a||(0!=g||0!=h)&&f==this.isDark(c+g,d+h)&&e++;e>5&&(b+=3+e-5)}for(var c=0;a-1>c;c++)for(var d=0;a-1>d;d++){var i=0;this.isDark(c,d)&&i++,this.isDark(c+1,d)&&i++,this.isDark(c,d+1)&&i++,this.isDark(c+1,d+1)&&i++,(0==i||4==i)&&(b+=3)}for(var c=0;a>c;c++)for(var d=0;a-6>d;d++)this.isDark(c,d)&&!this.isDark(c,d+1)&&this.isDark(c,d+2)&&this.isDark(c,d+3)&&this.isDark(c,d+4)&&!this.isDark(c,d+5)&&this.isDark(c,d+6)&&(b+=40);for(var d=0;a>d;d++)for(var c=0;a-6>c;c++)this.isDark(c,d)&&!this.isDark(c+1,d)&&this.isDark(c+2,d)&&this.isDark(c+3,d)&&this.isDark(c+4,d)&&!this.isDark(c+5,d)&&this.isDark(c+6,d)&&(b+=40);for(var j=0,d=0;a>d;d++)for(var c=0;a>c;c++)this.isDark(c,d)&&j++;return b+=10*(Math.abs(100*j/a/a-50)/5)}},b.getPatternPosition=function(a){return b.PATTERN_POSITION_TABLE[a-1]},b.PATTERN_POSITION_TABLE=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],b.G15=1335,b.G18=7973,b.G15_MASK=21522,b.getBCHTypeInfo=function(a){for(var c=a<<10;b.getBCHDigit(c)-b.getBCHDigit(b.G15)>=0;)c^=b.G15<<b.getBCHDigit(c)-b.getBCHDigit(b.G15);return(a<<10|c)^b.G15_MASK},b.getBCHTypeNumber=function(a){for(var c=a<<12;b.getBCHDigit(c)-b.getBCHDigit(b.G18)>=0;)c^=b.G18<<b.getBCHDigit(c)-b.getBCHDigit(b.G18);return a<<12|c},b.getBCHDigit=function(a){for(var b=0;0!=a;)b++,a>>>=1;return b},b.getMask=function(a,b,c){switch(a){case 0:return 0==(b+c)%2;case 1:return 0==b%2;case 2:return 0==c%3;case 3:return 0==(b+c)%3;case 4:return 0==(Math.floor(b/2)+Math.floor(c/3))%2;case 5:return 0==b*c%2+b*c%3;case 6:return 0==(b*c%2+b*c%3)%2;case 7:return 0==(b*c%3+(b+c)%2)%2;default:throw"bad maskPattern:"+a}},b.getErrorCorrectPolynomial=function(a){for(var b=new d([1],0),c=0;a>c;c++)b=b.multiply(new d([1,e.gexp(c)],0));return b},b.getLengthInBits=function(a,b){if(b>=1&&10>b)return 8;if(27>b)return 16;if(41>b)return 16;throw"type:"+a},b.createData=function(a,c,e){for(var f=b.getRSBlocks(a,c),g=new h,i=0;i<e.length;i++){var j=e[i];g.put(4,4),g.put(j.getLength(),b.getLengthInBits(j.mode,a)),j.write(g)}for(var k=0,i=0;i<f.length;i++)k+=f[i].dataCount;if(g.getLengthInBits()>8*k)throw"code length overflow. ("+g.getLengthInBits()+">"+8*k+")";for(g.getLengthInBits()+4<=8*k&&g.put(0,4);0!=g.getLengthInBits()%8;)g.putBit(!1);for(;;){if(g.getLengthInBits()>=8*k)break;if(g.put(236,8),g.getLengthInBits()>=8*k)break;g.put(17,8)}return b.createBytes(g,f)},b.createBytes=function(a,b){for(var c=0,f=0,g=0,h=new Array(b.length),i=new Array(b.length),j=0;j<b.length;j++){var k=b[j].dataCount,l=b[j].totalCount-k;f=Math.max(f,k),g=Math.max(g,l),h[j]=new Array(k);for(var m=0;m<h[j].length;m++)h[j][m]=255&a.buffer[m+c];c+=k;var n=e.getErrorCorrectPolynomial(l),o=new d(h[j],n.getLength()-1),p=o.mod(n);i[j]=new Array(n.getLength()-1);for(var m=0;m<i[j].length;m++){var q=m+p.getLength()-i[j].length;i[j][m]=q>=0?p.get(q):0}}for(var r=0,m=0;m<b.length;m++)r+=b[m].totalCount;for(var s=new Array(r),t=0,m=0;f>m;m++)for(var j=0;j<b.length;j++)m<h[j].length&&(s[t++]=h[j][m]);for(var m=0;g>m;m++)for(var j=0;j<b.length;j++)m<i[j].length&&(s[t++]=i[j][m]);return s},b.RS_BLOCK_TABLE=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],b.getRSBlocks=function(a,c){var d=b.getRsBlockTable(a,c);if(void 0==d)throw"bad rs block @ typeNumber:"+a+"/errorCorrectLevel:"+c;for(var e=d.length/3,f=[],g=0;e>g;g++)for(var h=d[3*g+0],i=d[3*g+1],j=d[3*g+2],k=0;h>k;k++)f.push({totalCount:i,dataCount:j});return f},b.getRsBlockTable=function(a,c){switch(c){case 1:return b.RS_BLOCK_TABLE[4*(a-1)+0];case 0:return b.RS_BLOCK_TABLE[4*(a-1)+1];case 3:return b.RS_BLOCK_TABLE[4*(a-1)+2];case 2:return b.RS_BLOCK_TABLE[4*(a-1)+3];default:return}};var c=function(a,b){var c=a.dataList.length;return 8*(b.totalCount-b.dataCount)},d=function(a,b){if(void 0==a.length)throw a.length+"/"+b;for(var c=0;c<a.length&&0==a[c];)c++;this.num=new Array(a.length-c+b);for(var d=0;d<a.length-c;d++)this.num[d]=a[c+d]};d.prototype={get:function(a){return this.num[a]},getLength:function(){return this.num.length},multiply:function(a){for(var b=new Array(this.getLength()+a.getLength()-1),c=0;c<this.getLength();c++)for(var f=0;f<a.getLength();f++)b[c+f]^=e.gexp(e.glog(this.get(c))+e.glog(a.get(f)));return new d(b,0)},mod:function(a){if(this.getLength()-a.getLength()<0)return this;for(var b=e.glog(this.get(0))-e.glog(a.get(0)),c=new Array(this.getLength()),f=0;f<this.getLength();f++)c[f]=this.get(f);for(var f=0;f<a.getLength();f++)c[f]^=e.gexp(e.glog(a.get(f))+b);return new d(c,0).mod(a)}};var e={glog:function(a){if(1>a)throw"glog("+a+")";return e.LOG_TABLE[a]},gexp:function(a){for(;0>a;)a+=255;for(;a>=256;)a-=255;return e.EXP_TABLE[a]},EXP_TABLE:new Array(256),LOG_TABLE:new Array(256),getErrorCorrectPolynomial:function(a){for(var b=new d([1],0),c=0;a>c;c++)b=b.multiply(new d([1,e.gexp(c)],0));return b}};!function(){for(var a=0;8>a;a++)e.EXP_TABLE[a]=1<<a;for(var a=8;256>a;a++)e.EXP_TABLE[a]=e.EXP_TABLE[a-4]^e.EXP_TABLE[a-5]^e.EXP_TABLE[a-6]^e.EXP_TABLE[a-8];for(var a=0;255>a;a++)e.LOG_TABLE[e.EXP_TABLE[a]]=a}();var h=function(){this.buffer=[],this.length=0};return h.prototype={get:function(a){var b=Math.floor(a/8);return 1==(this.buffer[b]>>>7-a%8&1)},put:function(a,b){for(var c=0;b>c;c++)this.putBit(1==(a>>>b-c-1&1))},getLengthInBits:function(){return this.length},putBit:function(a){var b=Math.floor(this.length/8);this.buffer.length<=b&&this.buffer.push(0),a&&(this.buffer[b]|=128>>>this.length%8),this.length++}},b}();
+    window.QRCode = function(el, options) {
+        if (typeof el === 'string') el = document.getElementById(el);
+        var text = typeof options === 'string' ? options : options.text;
+        var size = options.width || 128;
+        var qr = new QR(0, 1);
+        qr.addData(text);
+        qr.make();
+        var count = qr.getModuleCount();
+        var cellSize = Math.floor(size / count);
+        var canvas = document.createElement('canvas');
+        canvas.width = canvas.height = cellSize * count;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = options.colorLight || '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = options.colorDark || '#000000';
+        for (var r = 0; r < count; r++) {
+            for (var c = 0; c < count; c++) {
+                if (qr.isDark(r, c)) {
+                    ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+                }
+            }
+        }
+        el.innerHTML = '';
+        el.appendChild(canvas);
+    };
+    window.QRCode.CorrectLevel = { L: 1, M: 0, Q: 3, H: 2 };
+    </script>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --border: #1e1e2e;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #7c3aed;
+            --accent-dim: #5b21b6;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        [data-theme="light"] {
+            --bg: #f5f5f7;
+            --surface: #ffffff;
+            --border: #e0e0e0;
+            --text: #1a1a2e;
+            --text-dim: #666;
+            --accent: #7c3aed;
+            --accent-dim: #5b21b6;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .container { max-width: 600px; width: 100%; }
+
+        h1 { color: var(--accent); margin-bottom: 0.5rem; font-size: 1.5rem; }
+
+        .subtitle { color: var(--text-dim); font-size: 0.8rem; margin-bottom: 2rem; }
+
+        .status-bar {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--error);
+            margin-right: 0.5rem;
+        }
+        .status-dot.online { background: var(--success); }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .panel h2 {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        input, textarea {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.75rem;
+            border-radius: 4px;
+            font-family: inherit;
+            margin-bottom: 1rem;
+        }
+
+        input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+        textarea { min-height: 100px; resize: vertical; }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--accent-dim); }
+        button:disabled { background: var(--border); cursor: not-allowed; }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        .btn-secondary:hover { background: var(--border); color: var(--text); }
+
+        .btn-danger {
+            background: transparent;
+            border: 1px solid var(--error);
+            color: var(--error);
+        }
+        .btn-danger:hover { background: var(--error); color: white; }
+
+        .file-drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+            background: var(--surface);
+        }
+        .file-drop-zone:hover, .file-drop-zone.drag-over {
+            border-color: var(--accent);
+            background: rgba(138, 92, 246, 0.1);
+        }
+        .file-drop-zone.uploading { pointer-events: none; opacity: 0.7; }
+
+        .file-progress { margin-top: 1rem; display: none; }
+        .file-progress.active { display: block; }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-text {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 0.5rem;
+        }
+
+        .incoming-file {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .messages { max-height: 300px; overflow-y: auto; margin-bottom: 1rem; }
+
+        .message {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.85rem;
+            word-break: break-all;
+        }
+
+        .alert {
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.8rem;
+        }
+        .alert-error { background: rgba(239, 68, 68, 0.1); border: 1px solid var(--error); color: var(--error); }
+        .alert-success { background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); color: var(--success); }
+
+        .hidden { display: none; }
+
+        .word-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .word-input-group { display: flex; align-items: center; gap: 0.5rem; }
+        .word-number { color: var(--accent); font-size: 0.75rem; font-weight: bold; width: 1.5rem; text-align: center; }
+        .word-input { flex: 1; margin-bottom: 0; padding: 0.6rem; font-size: 0.9rem; }
+        .word-input.valid { border-color: var(--success); }
+        .word-input.invalid { border-color: var(--error); }
+
+        .login-actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .login-actions button { flex: 1; }
+
+        .strength-meter { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 0.5rem; }
+        .strength-bar { height: 100%; width: 0%; background: var(--error); transition: width 0.3s, background 0.3s; }
+        .strength-text { font-size: 0.7rem; color: var(--text-dim); text-align: center; }
+
+        .identity-main { display: flex; gap: 1rem; margin-bottom: 1rem; }
+
+        .numeric-id-box {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 1rem;
+            cursor: pointer;
+            text-align: center;
+        }
+        .numeric-id-box:hover { border-color: var(--success); }
+        .numeric-id-box .id-number { font-size: 1.5rem; font-weight: bold; color: var(--accent); letter-spacing: 0.1em; }
+        .numeric-id-box .id-separator { color: var(--success); }
+        .numeric-id-box .id-label { font-size: 0.65rem; color: var(--text-dim); margin-top: 0.5rem; }
+
+        .qr-box {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem;
+            text-align: center;
+        }
+        .qr-box #qrcode { display: inline-block; background: white; padding: 0.5rem; border-radius: 4px; }
+        .qr-box .qr-label { font-size: 0.6rem; color: var(--text-dim); margin-top: 0.4rem; }
+
+        .pubkey-toggle {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            cursor: pointer;
+            margin-bottom: 0.5rem;
+        }
+        .pubkey-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+        .pubkey-box {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .pubkey-box .hash { font-size: 0.6rem; color: var(--text-dim); word-break: break-all; font-family: monospace; }
+
+        .theme-toggle {
+            position: fixed;
+            top: 1rem; right: 1rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            width: 40px; height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+            z-index: 100;
+        }
+        .theme-toggle:hover { border-color: var(--accent); transform: scale(1.1); }
+
+        .flex-row { display: flex; gap: 0.5rem; }
+        .flex-row button { flex: 1; }
+
+        .modal {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal.hidden { display: none; }
+
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-header h3 { margin: 0; font-size: 1rem; }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+        }
+        .modal-close:hover { color: var(--text); }
+
+        .contact-list { overflow-y: auto; padding: 1rem; }
+
+        .contact-item {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .contact-name { color: var(--accent); font-weight: bold; font-size: 0.95rem; margin-bottom: 0.25rem; }
+        .contact-id { color: var(--text-dim); font-size: 0.8rem; }
+        .contact-actions { display: flex; gap: 0.5rem; }
+
+        .btn-delete {
+            background: transparent;
+            border: 1px solid var(--error);
+            color: var(--error);
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
+        }
+        .btn-delete:hover { background: var(--error); color: white; }
+
+        .btn-use {
+            background: var(--accent);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 0.25rem 0.5rem;
+            font-size: 0.9rem;
+        }
+        .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            .flex-row { flex-direction: column; }
+            .identity-main { flex-direction: column; }
+            .numeric-id-box .id-number { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <span id="themeIcon">🌙</span>
+    </button>
+
+    <div class="container">
+        <h1>🔮 VaporDrop</h1>
+        <p class="subtitle">Ephemeral • Zero-Knowledge • X25519 + XChaCha20</p>
+
+        <div class="status-bar">
+            <span style="display: flex; align-items: center;">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Disconnected</span>
+            </span>
+            <span id="sessionInfo"></span>
+        </div>
+
+        <!-- Login Panel -->
+        <div class="panel" id="loginPanel">
+            <h2>🔑 Brain Key</h2>
+            <p style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 1rem;">
+                Enter 6 words (minimum 4 letters each). No registration. No storage.
+            </p>
+            
+            <div class="word-grid" id="wordGrid">
+                <div class="word-input-group">
+                    <span class="word-number">1</span>
+                    <input type="password" class="word-input" data-index="0" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+                <div class="word-input-group">
+                    <span class="word-number">2</span>
+                    <input type="password" class="word-input" data-index="1" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+                <div class="word-input-group">
+                    <span class="word-number">3</span>
+                    <input type="password" class="word-input" data-index="2" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+                <div class="word-input-group">
+                    <span class="word-number">4</span>
+                    <input type="password" class="word-input" data-index="3" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+                <div class="word-input-group">
+                    <span class="word-number">5</span>
+                    <input type="password" class="word-input" data-index="4" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+                <div class="word-input-group">
+                    <span class="word-number">6</span>
+                    <input type="password" class="word-input" data-index="5" minlength="4" placeholder="word" autocomplete="off">
+                </div>
+            </div>
+            
+            <div class="extra-words hidden" id="extraWords"></div>
+            
+            <div class="login-actions">
+                <button class="btn-secondary" onclick="addWord()" id="addWordBtn">+ Add word</button>
+                <button onclick="login()" id="loginBtn" disabled>Login</button>
+            </div>
+            
+            <div class="strength-meter" id="strengthMeter">
+                <div class="strength-bar" id="strengthBar"></div>
+            </div>
+            <p class="strength-text" id="strengthText">Enter 6 words to continue</p>
+        </div>
+
+        <!-- Dashboard Panel -->
+        <div class="panel hidden" id="dashboardPanel">
+            <h2>📬 Your Identity</h2>
+            
+            <div class="identity-main">
+                <div class="numeric-id-box" onclick="copyNumericId()" title="Click to copy">
+                    <div class="id-number">
+                        <span id="numericIdMain">--------</span><span class="id-separator">-</span><span id="numericIdSuffix">--</span>
+                    </div>
+                    <div class="id-label">📋 Click to copy</div>
+                </div>
+                
+                <div class="qr-box">
+                    <div id="qrcode"></div>
+                    <div class="qr-label">Scan ID</div>
+                </div>
+            </div>
+            
+            <div class="pubkey-toggle" onclick="togglePubKey()">
+                <span id="pubkeyToggleIcon">▶</span> Show public key (X25519)
+            </div>
+            <div class="pubkey-box hidden" id="pubkeyBox">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <span class="hash" id="myHashDisplay">-</span>
+                    <button class="btn-icon" onclick="copyToClipboard('myHashDisplay')" title="Copy">📋</button>
+                </div>
+            </div>
+            
+            <h2 style="margin-top: 1.5rem;">📨 Send Message</h2>
+            <p style="color: var(--text-dim); font-size: 0.75rem; margin-bottom: 0.5rem;">
+                Enter: Numeric ID (12345678-90), saved contact name, or full public key
+            </p>
+            <div style="position: relative;">
+                <input type="text" id="recipientInput" placeholder="12345678-90 or contact name or full key">
+                <button class="btn-icon" onclick="promptSaveContact()" title="Save as contact" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%);">💾</button>
+            </div>
+            <textarea id="messageContent" placeholder="Your message (encrypted client-side with XChaCha20-Poly1305)"></textarea>
+            <button onclick="sendMessage()">Send Encrypted</button>
+
+            <div class="file-drop-zone" id="fileDropZone" onclick="document.getElementById('fileInput').click()">
+                <div style="font-size: 2rem;">📁</div>
+                <p style="color: var(--text-dim); font-size: 0.85rem;">Drag & drop a file or click to select</p>
+                <p style="color: var(--text-dim); font-size: 0.7rem;">Max 1 GB • E2E encrypted</p>
+                <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelect(event)">
+            </div>
+            <div class="file-progress" id="fileProgress">
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="progressBarFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">Preparing...</div>
+            </div>
+
+            <div class="incoming-files" id="incomingFiles"></div>
+
+            <h2 style="margin-top: 1.5rem;">📩 Inbox</h2>
+            <div id="alertArea"></div>
+            <div class="messages" id="messagesArea">
+                <p style="color: var(--text-dim); font-size: 0.8rem;">No messages yet</p>
+            </div>
+            <div class="flex-row">
+                <button onclick="fetchMessages()">Check Messages</button>
+                <button class="btn-secondary" onclick="toggleContactBook()">📖 Contacts</button>
+                <button class="btn-secondary" onclick="logout()">Logout</button>
+                <button class="btn-danger" onclick="destroyAllData()">🔥 Destroy</button>
+            </div>
+            
+            <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--error); border-radius: 4px;">
+                <p style="color: var(--error); font-size: 0.75rem; margin: 0;">
+                    <strong>⚠️ Panic:</strong> "Destroy" deletes all local data. You'll need to share your new ID with contacts.
+                </p>
+            </div>
+            
+            <div id="contactBookModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📖 Contact Book</h3>
+                        <button class="modal-close" onclick="toggleContactBook()">✕</button>
+                    </div>
+                    <div id="contactList" class="contact-list">
+                        <p style="color: var(--text-dim); text-align: center; padding: 2rem;">No contacts saved yet</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p style="color: var(--text-dim); font-size: 0.65rem; text-align: center; margin-top: 2rem;">
+            Messages auto-expire after 7 days • All data stored in RAM only<br>
+            Crypto: X25519 + XChaCha20-Poly1305 + BLAKE3 (all non-NIST)
+        </p>
+    </div>
+
+    <script>
+    // =============================================================================
+    // VAPORDROP - X25519 + XChaCha20-Poly1305 + BLAKE3 (ALL NON-NIST)
+    // =============================================================================
+    
+    const MIN_WORDS = 6;
+    const MIN_WORD_LENGTH = 4;
+    const MAX_WORDS = 12;
+    
+    let sessionKeys = null;
+    let numericIdFull = null;
+    let wordCount = 6;
+    let sessionToken = null;
+    
+    // =============================================================================
+    // UTILITIES
+    // =============================================================================
+    
+    function hexToBytes(hex) {
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < hex.length; i += 2) {
+            bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+        }
+        return bytes;
+    }
+    
+    function bytesToHex(bytes) {
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    
+    function randomBytes(n) {
+        const bytes = new Uint8Array(n);
+        crypto.getRandomValues(bytes);
+        return bytes;
+    }
+    
+    function getSessionToken() {
+        if (!sessionToken) {
+            sessionToken = bytesToHex(randomBytes(16));
+        }
+        return sessionToken;
+    }
+    
+    // =============================================================================
+    // BLAKE3 IMPLEMENTATION (NON-NIST)
+    // =============================================================================
+    
+    const BLAKE3_IV = new Uint32Array([
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
+        0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19
+    ]);
+    
+    const BLAKE3_PERM = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8];
+    
+    function rotr32(x, n) { return ((x >>> n) | (x << (32 - n))) >>> 0; }
+    
+    function blake3G(s, a, b, c, d, mx, my) {
+        s[a] = (s[a] + s[b] + mx) >>> 0; s[d] = rotr32(s[d] ^ s[a], 16);
+        s[c] = (s[c] + s[d]) >>> 0; s[b] = rotr32(s[b] ^ s[c], 12);
+        s[a] = (s[a] + s[b] + my) >>> 0; s[d] = rotr32(s[d] ^ s[a], 8);
+        s[c] = (s[c] + s[d]) >>> 0; s[b] = rotr32(s[b] ^ s[c], 7);
+    }
+    
+    function blake3Round(s, m) {
+        blake3G(s, 0, 4, 8, 12, m[0], m[1]);
+        blake3G(s, 1, 5, 9, 13, m[2], m[3]);
+        blake3G(s, 2, 6, 10, 14, m[4], m[5]);
+        blake3G(s, 3, 7, 11, 15, m[6], m[7]);
+        blake3G(s, 0, 5, 10, 15, m[8], m[9]);
+        blake3G(s, 1, 6, 11, 12, m[10], m[11]);
+        blake3G(s, 2, 7, 8, 13, m[12], m[13]);
+        blake3G(s, 3, 4, 9, 14, m[14], m[15]);
+    }
+    
+    function blake3Compress(cv, block, blockLen, counter, flags) {
+        const s = new Uint32Array(16);
+        s.set(cv);
+        s[8] = BLAKE3_IV[0]; s[9] = BLAKE3_IV[1]; s[10] = BLAKE3_IV[2]; s[11] = BLAKE3_IV[3];
+        s[12] = counter & 0xFFFFFFFF; s[13] = 0; s[14] = blockLen; s[15] = flags;
+        
+        const m = new Uint32Array(16);
+        const v = new DataView(block.buffer, block.byteOffset, block.byteLength);
+        for (let i = 0; i < 16; i++) m[i] = i * 4 < block.length ? v.getUint32(i * 4, true) : 0;
+        
+        for (let r = 0; r < 7; r++) {
+            blake3Round(s, m);
+            const pm = new Uint32Array(16);
+            for (let i = 0; i < 16; i++) pm[i] = m[BLAKE3_PERM[i]];
+            m.set(pm);
+        }
+        
+        for (let i = 0; i < 8; i++) { s[i] ^= s[i + 8]; s[i + 8] ^= cv[i]; }
+        return s;
+    }
+    
+    function blake3(input, outLen = 32) {
+        const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+        let cv = new Uint32Array(BLAKE3_IV);
+        const block = new Uint8Array(64);
+        let pos = 0;
+        const CHUNK_START = 1, CHUNK_END = 2, ROOT = 8;
+        let flags = CHUNK_START;
+        
+        while (pos < data.length) {
+            const remaining = data.length - pos;
+            const len = Math.min(64, remaining);
+            block.fill(0);
+            block.set(data.subarray(pos, pos + len));
+            if (pos + len >= data.length) flags |= CHUNK_END | ROOT;
+            const s = blake3Compress(cv, block, len, 0, flags);
+            cv = s.subarray(0, 8);
+            pos += 64;
+            flags = 0;
+        }
+        
+        if (data.length === 0) {
+            block.fill(0);
+            const s = blake3Compress(cv, block, 0, 0, CHUNK_START | CHUNK_END | ROOT);
+            cv = s.subarray(0, 8);
+        }
+        
+        const out = new Uint8Array(outLen);
+        const ov = new DataView(out.buffer);
+        for (let i = 0; i < Math.min(8, Math.ceil(outLen / 4)); i++) ov.setUint32(i * 4, cv[i], true);
+        return out;
+    }
+    
+    // =============================================================================
+    // X25519 IMPLEMENTATION (DJB CURVE - NON-NIST)
+    // =============================================================================
+    
+    const X25519_P = 2n ** 255n - 19n;
+    const X25519_A24 = 121665n;
+    
+    function bytesToBigInt(b) {
+        let r = 0n;
+        for (let i = b.length - 1; i >= 0; i--) r = (r << 8n) | BigInt(b[i]);
+        return r;
+    }
+    
+    function bigIntToBytes(n, len = 32) {
+        const b = new Uint8Array(len);
+        for (let i = 0; i < len; i++) { b[i] = Number(n & 0xFFn); n >>= 8n; }
+        return b;
+    }
+    
+    function modPow(base, exp, mod) {
+        let r = 1n;
+        base = base % mod;
+        while (exp > 0n) {
+            if (exp & 1n) r = (r * base) % mod;
+            exp >>= 1n;
+            base = (base * base) % mod;
+        }
+        return r;
+    }
+    
+    function modInv(a, p) { return modPow(a, p - 2n, p); }
+    
+    function x25519ScalarMult(k, u) {
+        k = new Uint8Array(k);
+        k[0] &= 248; k[31] &= 127; k[31] |= 64;
+        
+        const kn = bytesToBigInt(k);
+        let un = bytesToBigInt(u) & ((2n ** 255n) - 1n);
+        
+        let x1 = un, x2 = 1n, z2 = 0n, x3 = un, z3 = 1n, swap = 0n;
+        
+        for (let t = 254n; t >= 0n; t--) {
+            const kt = (kn >> t) & 1n;
+            swap ^= kt;
+            if (swap) { [x2, x3] = [x3, x2]; [z2, z3] = [z3, z2]; }
+            swap = kt;
+            
+            const A = (x2 + z2) % X25519_P;
+            const AA = (A * A) % X25519_P;
+            const B = (x2 - z2 + X25519_P) % X25519_P;
+            const BB = (B * B) % X25519_P;
+            const E = (AA - BB + X25519_P) % X25519_P;
+            const C = (x3 + z3) % X25519_P;
+            const D = (x3 - z3 + X25519_P) % X25519_P;
+            const DA = (D * A) % X25519_P;
+            const CB = (C * B) % X25519_P;
+            x3 = modPow((DA + CB) % X25519_P, 2n, X25519_P);
+            z3 = (x1 * modPow((DA - CB + X25519_P) % X25519_P, 2n, X25519_P)) % X25519_P;
+            x2 = (AA * BB) % X25519_P;
+            z2 = (E * ((AA + X25519_A24 * E) % X25519_P)) % X25519_P;
+        }
+        
+        if (swap) { [x2, x3] = [x3, x2]; [z2, z3] = [z3, z2]; }
+        return bigIntToBytes((x2 * modInv(z2, X25519_P)) % X25519_P);
+    }
+    
+    function x25519KeyPair(seed) {
+        const priv = seed.slice(0, 32);
+        const base = new Uint8Array(32); base[0] = 9;
+        return { privateKey: priv, publicKey: x25519ScalarMult(priv, base) };
+    }
+    
+    function x25519SharedSecret(priv, pub) {
+        return x25519ScalarMult(priv, pub);
+    }
+    
+    // =============================================================================
+    // XCHACHA20-POLY1305 IMPLEMENTATION (DJB CIPHER - NON-NIST)
+    // =============================================================================
+    
+    function rotl32(v, n) { return ((v << n) | (v >>> (32 - n))) >>> 0; }
+    
+    function quarterRound(x, a, b, c, d) {
+        x[a] = (x[a] + x[b]) >>> 0; x[d] = rotl32(x[d] ^ x[a], 16);
+        x[c] = (x[c] + x[d]) >>> 0; x[b] = rotl32(x[b] ^ x[c], 12);
+        x[a] = (x[a] + x[b]) >>> 0; x[d] = rotl32(x[d] ^ x[a], 8);
+        x[c] = (x[c] + x[d]) >>> 0; x[b] = rotl32(x[b] ^ x[c], 7);
+    }
+    
+    function chacha20Block(key, nonce, counter) {
+        const s = new Uint32Array(16);
+        s[0] = 0x61707865; s[1] = 0x3320646e; s[2] = 0x79622d32; s[3] = 0x6b206574;
+        const kv = new DataView(key.buffer, key.byteOffset);
+        for (let i = 0; i < 8; i++) s[4 + i] = kv.getUint32(i * 4, true);
+        s[12] = counter;
+        const nv = new DataView(nonce.buffer, nonce.byteOffset);
+        s[13] = nv.getUint32(0, true); s[14] = nv.getUint32(4, true); s[15] = nv.getUint32(8, true);
+        
+        const w = new Uint32Array(s);
+        for (let i = 0; i < 10; i++) {
+            quarterRound(w, 0, 4, 8, 12); quarterRound(w, 1, 5, 9, 13);
+            quarterRound(w, 2, 6, 10, 14); quarterRound(w, 3, 7, 11, 15);
+            quarterRound(w, 0, 5, 10, 15); quarterRound(w, 1, 6, 11, 12);
+            quarterRound(w, 2, 7, 8, 13); quarterRound(w, 3, 4, 9, 14);
+        }
+        for (let i = 0; i < 16; i++) w[i] = (w[i] + s[i]) >>> 0;
+        return new Uint8Array(w.buffer);
+    }
+    
+    function hchacha20(key, nonce16) {
+        const s = new Uint32Array(16);
+        s[0] = 0x61707865; s[1] = 0x3320646e; s[2] = 0x79622d32; s[3] = 0x6b206574;
+        const kv = new DataView(key.buffer, key.byteOffset);
+        for (let i = 0; i < 8; i++) s[4 + i] = kv.getUint32(i * 4, true);
+        const nv = new DataView(nonce16.buffer, nonce16.byteOffset);
+        for (let i = 0; i < 4; i++) s[12 + i] = nv.getUint32(i * 4, true);
+        
+        const w = new Uint32Array(s);
+        for (let i = 0; i < 10; i++) {
+            quarterRound(w, 0, 4, 8, 12); quarterRound(w, 1, 5, 9, 13);
+            quarterRound(w, 2, 6, 10, 14); quarterRound(w, 3, 7, 11, 15);
+            quarterRound(w, 0, 5, 10, 15); quarterRound(w, 1, 6, 11, 12);
+            quarterRound(w, 2, 7, 8, 13); quarterRound(w, 3, 4, 9, 14);
+        }
+        
+        const r = new Uint8Array(32);
+        const rv = new DataView(r.buffer);
+        for (let i = 0; i < 4; i++) rv.setUint32(i * 4, w[i], true);
+        for (let i = 0; i < 4; i++) rv.setUint32(16 + i * 4, w[12 + i], true);
+        return r;
+    }
+    
+    function chacha20Encrypt(key, nonce, data) {
+        const out = new Uint8Array(data.length);
+        let ctr = 1;
+        for (let i = 0; i < data.length; i += 64) {
+            const blk = chacha20Block(key, nonce, ctr++);
+            const len = Math.min(64, data.length - i);
+            for (let j = 0; j < len; j++) out[i + j] = data[i + j] ^ blk[j];
+        }
+        return out;
+    }
+    
+    function poly1305(key, msg) {
+        const r = new Uint8Array(16), s = new Uint8Array(16);
+        for (let i = 0; i < 16; i++) { r[i] = key[i]; s[i] = key[16 + i]; }
+        r[3] &= 15; r[7] &= 15; r[11] &= 15; r[15] &= 15;
+        r[4] &= 252; r[8] &= 252; r[12] &= 252;
+        
+        let rB = 0n, sB = 0n;
+        for (let i = 0; i < 16; i++) { rB |= BigInt(r[i]) << BigInt(i * 8); sB |= BigInt(s[i]) << BigInt(i * 8); }
+        
+        const p = (1n << 130n) - 5n;
+        let acc = 0n;
+        for (let i = 0; i < msg.length; i += 16) {
+            const len = Math.min(16, msg.length - i);
+            let blk = 0n;
+            for (let j = 0; j < len; j++) blk |= BigInt(msg[i + j]) << BigInt(j * 8);
+            blk |= 1n << BigInt(len * 8);
+            acc = ((acc + blk) * rB) % p;
+        }
+        acc = (acc + sB) % (1n << 128n);
+        
+        const tag = new Uint8Array(16);
+        for (let i = 0; i < 16; i++) tag[i] = Number((acc >> BigInt(i * 8)) & 0xFFn);
+        return tag;
+    }
+    
+    function padTo16(d) {
+        const pl = (16 - (d.length % 16)) % 16;
+        if (pl === 0) return d;
+        const p = new Uint8Array(d.length + pl);
+        p.set(d);
+        return p;
+    }
+    
+    function leU64(v) {
+        const r = new Uint8Array(8);
+        new DataView(r.buffer).setBigUint64(0, BigInt(v), true);
+        return r;
+    }
+    
+    function xchacha20poly1305Encrypt(key, nonce24, pt) {
+        const subkey = hchacha20(key, nonce24.slice(0, 16));
+        const n12 = new Uint8Array(12); n12.set(nonce24.slice(16, 24), 4);
+        const ct = chacha20Encrypt(subkey, n12, pt);
+        const polyKey = chacha20Block(subkey, n12, 0).slice(0, 32);
+        const padded = padTo16(ct);
+        const auth = new Uint8Array(padded.length + 16);
+        auth.set(padded); auth.set(leU64(0), padded.length); auth.set(leU64(ct.length), padded.length + 8);
+        const tag = poly1305(polyKey, auth);
+        const out = new Uint8Array(ct.length + 16);
+        out.set(ct); out.set(tag, ct.length);
+        return out;
+    }
+    
+    function xchacha20poly1305Decrypt(key, nonce24, ct) {
+        if (ct.length < 16) throw new Error('Ciphertext too short');
+        const ciphertext = ct.slice(0, -16), tag = ct.slice(-16);
+        const subkey = hchacha20(key, nonce24.slice(0, 16));
+        const n12 = new Uint8Array(12); n12.set(nonce24.slice(16, 24), 4);
+        const polyKey = chacha20Block(subkey, n12, 0).slice(0, 32);
+        const padded = padTo16(ciphertext);
+        const auth = new Uint8Array(padded.length + 16);
+        auth.set(padded); auth.set(leU64(0), padded.length); auth.set(leU64(ciphertext.length), padded.length + 8);
+        const expected = poly1305(polyKey, auth);
+        let diff = 0;
+        for (let i = 0; i < 16; i++) diff |= tag[i] ^ expected[i];
+        if (diff !== 0) throw new Error('Authentication failed');
+        return chacha20Encrypt(subkey, n12, ciphertext);
+    }
+    
+    // =============================================================================
+    // KEY DERIVATION
+    // =============================================================================
+    
+    async function deriveKeys(brainKey) {
+        const normalized = brainKey.trim().toLowerCase();
+        
+        // BLAKE3 key stretching (100k rounds)
+        let seed = blake3('vapordrop-x25519-v2-' + normalized);
+        for (let i = 0; i < 100000; i++) seed = blake3(seed);
+        
+        const keyPair = x25519KeyPair(seed);
+        const numericId = generateNumericId(keyPair.publicKey);
+        
+        return {
+            privateKey: keyPair.privateKey,
+            publicKey: keyPair.publicKey,
+            identityHash: bytesToHex(keyPair.publicKey),
+            numericId
+        };
+    }
+    
+    function generateNumericId(pubKey) {
+        const hash = blake3(pubKey);
+        const mainNum = ((hash[0] << 24) | (hash[1] << 16) | (hash[2] << 8) | hash[3]) >>> 0;
+        const suffixNum = ((hash[4] << 8) | hash[5]) % 100;
+        return {
+            main: (mainNum % 100000000).toString().padStart(8, '0'),
+            suffix: suffixNum.toString().padStart(2, '0'),
+            get full() { return this.main + '-' + this.suffix; }
+        };
+    }
+    
+    // =============================================================================
+    // ENCRYPTION / DECRYPTION
+    // =============================================================================
+    
+    function generateNonce() { return bytesToHex(randomBytes(32)); }
+    
+    async function encryptMessage(plaintext, recipientPubKeyHex) {
+        const recipientPubKey = hexToBytes(recipientPubKeyHex);
+        const shared = x25519SharedSecret(sessionKeys.privateKey, recipientPubKey);
+        const encKey = blake3(new Uint8Array([...shared, ...new TextEncoder().encode('vapordrop-msg-v2')]));
+        const nonce = randomBytes(24);
+        const ct = xchacha20poly1305Encrypt(encKey, nonce, new TextEncoder().encode(plaintext));
+        
+        // Format: [sender_pubkey(32)] [nonce(24)] [ciphertext]
+        const combined = new Uint8Array(32 + 24 + ct.length);
+        combined.set(sessionKeys.publicKey, 0);
+        combined.set(nonce, 32);
+        combined.set(ct, 56);
+        return btoa(String.fromCharCode(...combined));
+    }
+    
+    async function decryptMessage(cipherBlob) {
+        try {
+            const combined = Uint8Array.from(atob(cipherBlob), c => c.charCodeAt(0));
+            if (combined.length < 72) throw new Error('Too short');
+            
+            const senderPubKey = combined.slice(0, 32);
+            const nonce = combined.slice(32, 56);
+            const ct = combined.slice(56);
+            
+            const shared = x25519SharedSecret(sessionKeys.privateKey, senderPubKey);
+            const encKey = blake3(new Uint8Array([...shared, ...new TextEncoder().encode('vapordrop-msg-v2')]));
+            const pt = xchacha20poly1305Decrypt(encKey, nonce, ct);
+            return new TextDecoder().decode(pt);
+        } catch (e) {
+            return '[Decryption failed]';
+        }
+    }
+    
+    // =============================================================================
+    // SERVER COMMUNICATION
+    // =============================================================================
+    
+    async function registerIdentity() {
+        try {
+            await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Session-Token': getSessionToken() },
+                body: JSON.stringify({
+                    numeric_id: numericIdFull,
+                    public_key: sessionKeys.identityHash,
+                    nonce: generateNonce()
+                })
+            });
+        } catch (e) { console.error('Register failed:', e); }
+    }
+    
+    async function resolveRecipient(input) {
+        input = input.trim().toLowerCase();
+        
+        // Full public key (64 hex)?
+        if (/^[a-f0-9]{64}$/.test(input)) return [input];
+        
+        // Numeric ID?
+        if (/^\d{8}(-\d{2})?$/.test(input)) {
+            try {
+                const resp = await fetch('/api/resolve/' + encodeURIComponent(input), {
+                    headers: { 'X-Session-Token': getSessionToken() }
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.found && data.public_keys?.length > 0) return data.public_keys;
+                }
+            } catch (e) {}
+            return null;
+        }
+        
+        // Contact name?
+        const contacts = getContacts();
+        if (contacts[input]) return resolveRecipient(contacts[input]);
+        
+        return null;
+    }
+    
+    async function sendMessage() {
+        if (!sessionKeys) return;
+        
+        const recipient = document.getElementById('recipientInput').value.trim();
+        const content = document.getElementById('messageContent').value.trim();
+        
+        if (!recipient) { showAlert('Enter recipient'); return; }
+        if (!content) { showAlert('Enter message'); return; }
+        
+        try {
+            const keys = await resolveRecipient(recipient);
+            if (!keys || keys.length === 0) {
+                showAlert('Recipient not found');
+                return;
+            }
+            
+            let sent = 0;
+            for (const key of keys) {
+                const encrypted = await encryptMessage(content, key);
+                const resp = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Session-Token': getSessionToken() },
+                    body: JSON.stringify({
+                        to_hash: key,
+                        cipher_blob: encrypted,
+                        nonce: generateNonce()
+                    })
+                });
+                if (resp.ok) sent++;
+            }
+            
+            if (sent > 0) {
+                showAlert(keys.length > 1 ? `Sent to ${sent} recipients` : 'Message sent', 'success');
+                document.getElementById('messageContent').value = '';
+            } else {
+                showAlert('Send failed');
+            }
+        } catch (e) { showAlert('Error: ' + e.message); }
+    }
+    
+    async function fetchMessages() {
+        if (!sessionKeys) return;
+        
+        try {
+            const resp = await fetch('/api/fetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Session-Token': getSessionToken() },
+                body: JSON.stringify({
+                    my_hash: sessionKeys.identityHash,
+                    nonce: generateNonce()
+                })
+            });
+            
+            if (!resp.ok) {
+                if (resp.status === 429) showAlert('Rate limited');
+                return;
+            }
+            
+            const data = await resp.json();
+            const messages = data.messages || [];
+            
+            if (messages.length === 0) {
+                document.getElementById('messagesArea').innerHTML = '<p style="color: var(--text-dim);">No new messages</p>';
+                return;
+            }
+            
+            let html = '';
+            for (const msg of messages) {
+                const decrypted = await decryptMessage(msg.cipher_blob);
+                html += `<div class="message">${escapeHtml(decrypted)}</div>`;
+            }
+            document.getElementById('messagesArea').innerHTML = html;
+            showAlert(`${messages.length} message(s) received`, 'success');
+        } catch (e) { showAlert('Error: ' + e.message); }
+    }
+    
+    // =============================================================================
+    // FILE TRANSFER (up to 1GB)
+    // =============================================================================
+    
+    const FILE_CHUNK_SIZE = 1024 * 1024; // 1 MB
+    
+    function setupFileDragDrop() {
+        const zone = document.getElementById('fileDropZone');
+        if (!zone) return;
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+            zone.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); });
+        });
+        ['dragenter', 'dragover'].forEach(e => { zone.addEventListener(e, () => zone.classList.add('drag-over')); });
+        ['dragleave', 'drop'].forEach(e => { zone.addEventListener(e, () => zone.classList.remove('drag-over')); });
+        zone.addEventListener('drop', e => { if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]); });
+    }
+    
+    function handleFileSelect(event) {
+        if (event.target.files.length > 0) handleFile(event.target.files[0]);
+    }
+    
+    async function handleFile(file) {
+        if (!sessionKeys) { alert('Login first'); return; }
+        
+        const recipient = document.getElementById('recipientInput').value.trim();
+        if (!recipient) { alert('Enter recipient first'); return; }
+        if (file.size > 1073741824) { alert('Max 1 GB'); return; }
+        
+        const keys = await resolveRecipient(recipient);
+        if (!keys || keys.length === 0) { alert('Recipient not found'); return; }
+        if (keys.length > 1) { alert('Multiple keys found - use full public key'); return; }
+        
+        await uploadFile(file, keys[0]);
+    }
+    
+    async function uploadFile(file, recipientPubKey) {
+        const zone = document.getElementById('fileDropZone');
+        const progress = document.getElementById('fileProgress');
+        const bar = document.getElementById('progressBarFill');
+        const text = document.getElementById('progressText');
+        
+        zone.classList.add('uploading');
+        progress.classList.add('active');
+        text.textContent = 'Encrypting...';
+        
+        try {
+            const recipientKey = hexToBytes(recipientPubKey);
+            const shared = x25519SharedSecret(sessionKeys.privateKey, recipientKey);
+            const fileKey = blake3(new Uint8Array([...shared, ...new TextEncoder().encode('vapordrop-file-v2')]));
+            
+            // Encrypt filename
+            const fnNonce = randomBytes(24);
+            const encFn = xchacha20poly1305Encrypt(fileKey, fnNonce, new TextEncoder().encode(file.name));
+            const encFilenameHex = bytesToHex(fnNonce) + bytesToHex(encFn);
+            
+            const chunkCount = Math.ceil(file.size / FILE_CHUNK_SIZE);
+            
+            text.textContent = 'Initializing...';
+            const initResp = await fetch('/api/file/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Session-Token': getSessionToken() },
+                body: JSON.stringify({
+                    from_pubkey: sessionKeys.identityHash,
+                    to_pubkey: recipientPubKey,
+                    filename: encFilenameHex,
+                    filesize: file.size,
+                    chunk_count: chunkCount
+                })
+            });
+            
+            if (!initResp.ok) throw new Error('Init failed');
+            const { file_id } = await initResp.json();
+            
+            for (let i = 0; i < chunkCount; i++) {
+                const start = i * FILE_CHUNK_SIZE;
+                const end = Math.min(start + FILE_CHUNK_SIZE, file.size);
+                const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
+                
+                const chunkNonce = new Uint8Array(24);
+                chunkNonce.set(randomBytes(20), 0);
+                new DataView(chunkNonce.buffer).setUint32(20, i, true);
+                
+                const encChunk = xchacha20poly1305Encrypt(fileKey, chunkNonce, chunk);
+                const chunkData = new Uint8Array(24 + encChunk.length);
+                chunkData.set(chunkNonce, 0);
+                chunkData.set(encChunk, 24);
+                
+                const uploadResp = await fetch(`/api/file/chunk/${file_id}/${i}`, {
+                    method: 'POST',
+                    headers: { 'X-Session-Token': getSessionToken() },
+                    body: chunkData
+                });
+                if (!uploadResp.ok) throw new Error(`Chunk ${i} failed`);
+                
+                const pct = Math.round(((i + 1) / chunkCount) * 100);
+                bar.style.width = pct + '%';
+                text.textContent = `Uploading: ${pct}%`;
+            }
+            
+            text.textContent = '✓ File sent!';
+            setTimeout(() => {
+                progress.classList.remove('active');
+                zone.classList.remove('uploading');
+                bar.style.width = '0%';
+            }, 3000);
+        } catch (e) {
+            text.textContent = '✗ ' + e.message;
+            setTimeout(() => { progress.classList.remove('active'); zone.classList.remove('uploading'); }, 3000);
+        }
+    }
+    
+    async function checkPendingFiles() {
+        if (!sessionKeys) return;
+        
+        try {
+            const resp = await fetch(`/api/file/pending/${sessionKeys.identityHash}`, {
+                headers: { 'X-Session-Token': getSessionToken() }
+            });
+            if (!resp.ok) return;
+            
+            const { files } = await resp.json();
+            displayPendingFiles(files);
+        } catch (e) {}
+    }
+    
+    function displayPendingFiles(files) {
+        const container = document.getElementById('incomingFiles');
+        if (!files || files.length === 0) { container.innerHTML = ''; return; }
+        
+        container.innerHTML = '<h3 style="margin: 1rem 0 0.5rem; font-size: 0.9rem;">📥 Incoming Files</h3>';
+        for (const f of files) {
+            const size = formatSize(f.filesize);
+            container.innerHTML += `
+                <div class="incoming-file">
+                    <div>
+                        <div style="font-weight: bold;">📎 Encrypted file</div>
+                        <div style="font-size: 0.75rem; color: var(--text-dim);">${size}</div>
+                    </div>
+                    <button onclick="downloadFile('${f.file_id}','${f.from_pubkey}','${f.filename}',${f.chunk_count})">Download</button>
+                </div>
+            `;
+        }
+    }
+    
+    function formatSize(b) {
+        if (b < 1024) return b + ' B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+        return (b / 1073741824).toFixed(2) + ' GB';
+    }
+    
+    async function downloadFile(fileId, senderPubKey, encFilenameHex, chunkCount) {
+        const progress = document.getElementById('fileProgress');
+        const bar = document.getElementById('progressBarFill');
+        const text = document.getElementById('progressText');
+        
+        progress.classList.add('active');
+        text.textContent = 'Downloading...';
+        
+        try {
+            const senderKey = hexToBytes(senderPubKey);
+            const shared = x25519SharedSecret(sessionKeys.privateKey, senderKey);
+            const fileKey = blake3(new Uint8Array([...shared, ...new TextEncoder().encode('vapordrop-file-v2')]));
+            
+            // Decrypt filename
+            const fnNonce = hexToBytes(encFilenameHex.slice(0, 48));
+            const encFn = hexToBytes(encFilenameHex.slice(48));
+            const filename = new TextDecoder().decode(xchacha20poly1305Decrypt(fileKey, fnNonce, encFn));
+            
+            text.textContent = `Downloading: ${filename}`;
+            
+            const chunks = [];
+            for (let i = 0; i < chunkCount; i++) {
+                const resp = await fetch(`/api/file/download/${fileId}/${i}`, {
+                    headers: { 'X-Session-Token': getSessionToken() }
+                });
+                if (!resp.ok) throw new Error(`Chunk ${i} failed`);
+                
+                const data = new Uint8Array(await resp.arrayBuffer());
+                const nonce = data.slice(0, 24);
+                const enc = data.slice(24);
+                chunks.push(xchacha20poly1305Decrypt(fileKey, nonce, enc));
+                
+                bar.style.width = Math.round(((i + 1) / chunkCount) * 100) + '%';
+            }
+            
+            const total = chunks.reduce((s, c) => s + c.length, 0);
+            const combined = new Uint8Array(total);
+            let off = 0;
+            for (const c of chunks) { combined.set(c, off); off += c.length; }
+            
+            const blob = new Blob([combined]);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            await fetch(`/api/file/complete/${fileId}`, { method: 'POST', headers: { 'X-Session-Token': getSessionToken() } });
+            
+            text.textContent = '✓ Download complete!';
+            setTimeout(() => { progress.classList.remove('active'); checkPendingFiles(); }, 2000);
+        } catch (e) {
+            text.textContent = '✗ ' + e.message;
+            setTimeout(() => { progress.classList.remove('active'); }, 3000);
+        }
+    }
+    
+    // =============================================================================
+    // UI FUNCTIONS (unchanged from original)
+    // =============================================================================
+    
+    function getWords() {
+        const inputs = document.querySelectorAll('.word-input');
+        return Array.from(inputs).map(i => i.value.trim().toLowerCase()).filter(w => w);
+    }
+    
+    function validateWord(input) {
+        const w = input.value.trim();
+        const valid = w.length >= MIN_WORD_LENGTH && /^[a-zA-ZàèéìòùÀÈÉÌÒÙ]+$/.test(w);
+        input.classList.remove('valid', 'invalid');
+        if (w.length > 0) input.classList.add(valid ? 'valid' : 'invalid');
+        updateStrength();
+        return valid;
+    }
+    
+    function updateStrength() {
+        const words = getWords().filter(w => w.length >= MIN_WORD_LENGTH);
+        const pct = Math.min(100, (words.length / MIN_WORDS) * 100);
+        document.getElementById('strengthBar').style.width = pct + '%';
+        
+        if (words.length < MIN_WORDS) {
+            document.getElementById('strengthBar').style.background = 'var(--error)';
+            document.getElementById('strengthText').textContent = `${words.length}/${MIN_WORDS} valid words`;
+            document.getElementById('loginBtn').disabled = true;
+        } else {
+            document.getElementById('strengthBar').style.background = 'var(--success)';
+            document.getElementById('strengthText').textContent = `✓ ${words.length} words (~${Math.floor(words.length * 12.9)} bits)`;
+            document.getElementById('loginBtn').disabled = false;
+        }
+    }
+    
+    function addWord() {
+        if (wordCount >= MAX_WORDS) return;
+        wordCount++;
+        const group = document.createElement('div');
+        group.className = 'word-input-group';
+        group.innerHTML = `<span class="word-number">${wordCount}</span><input type="password" class="word-input" data-index="${wordCount - 1}" minlength="4" placeholder="word" autocomplete="off">`;
+        document.getElementById('extraWords').classList.remove('hidden');
+        document.getElementById('extraWords').appendChild(group);
+        const input = group.querySelector('input');
+        input.addEventListener('input', () => validateWord(input));
+        input.addEventListener('keydown', e => { if (e.key === 'Enter' && !document.getElementById('loginBtn').disabled) login(); });
+        input.focus();
+        if (wordCount >= MAX_WORDS) document.getElementById('addWordBtn').disabled = true;
+    }
+    
+    async function login() {
+        const words = getWords().filter(w => w.length >= MIN_WORD_LENGTH);
+        if (words.length < MIN_WORDS) { showAlert('Need ' + MIN_WORDS + ' words'); return; }
+        
+        try {
+            sessionKeys = await deriveKeys(words.join('-'));
+            numericIdFull = sessionKeys.numericId.full;
+            
+            document.querySelectorAll('.word-input').forEach(i => { i.value = ''; i.classList.remove('valid', 'invalid'); });
+            
+            document.getElementById('loginPanel').classList.add('hidden');
+            document.getElementById('dashboardPanel').classList.remove('hidden');
+            document.getElementById('numericIdMain').textContent = sessionKeys.numericId.main;
+            document.getElementById('numericIdSuffix').textContent = sessionKeys.numericId.suffix;
+            document.getElementById('myHashDisplay').textContent = sessionKeys.identityHash;
+            document.getElementById('sessionInfo').textContent = numericIdFull;
+            updateStatus(true, 'Connected');
+            
+            generateQRCode();
+            await registerIdentity();
+            fetchMessages();
+            checkPendingFiles();
+        } catch (e) { showAlert('Error: ' + e.message); }
+    }
+    
+    function logout() {
+        sessionKeys = null;
+        numericIdFull = null;
+        document.getElementById('loginPanel').classList.remove('hidden');
+        document.getElementById('dashboardPanel').classList.add('hidden');
+        document.getElementById('messagesArea').innerHTML = '<p style="color: var(--text-dim);">No messages yet</p>';
+        document.getElementById('sessionInfo').textContent = '';
+        updateStatus(false, 'Disconnected');
+        updateStrength();
+    }
+    
+    function destroyAllData() {
+        if (!confirm('⚠️ DESTROY ALL DATA?\n\nThis cannot be undone!')) return;
+        
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key?.startsWith('vapordrop-')) localStorage.removeItem(key);
+        }
+        sessionKeys = null;
+        numericIdFull = null;
+        sessionToken = null;
+        document.querySelectorAll('input, textarea').forEach(e => e.value = '');
+        document.getElementById('loginPanel').classList.remove('hidden');
+        document.getElementById('dashboardPanel').classList.add('hidden');
+        updateStatus(false, 'Disconnected');
+        showAlert('🔥 All data destroyed', 'success');
+    }
+    
+    function showAlert(msg, type = 'error') {
+        document.getElementById('alertArea').innerHTML = `<div class="alert alert-${type}">${escapeHtml(msg)}</div>`;
+        setTimeout(() => document.getElementById('alertArea').innerHTML = '', 5000);
+    }
+    
+    function updateStatus(online, text) {
+        document.getElementById('statusDot').className = 'status-dot' + (online ? ' online' : '');
+        document.getElementById('statusText').textContent = text;
+    }
+    
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    
+    function copyToClipboard(id) {
+        navigator.clipboard.writeText(document.getElementById(id).textContent)
+            .then(() => showAlert('Copied!', 'success')).catch(() => {});
+    }
+    
+    function copyNumericId() {
+        navigator.clipboard.writeText(numericIdFull)
+            .then(() => showAlert('ID copied!', 'success')).catch(() => {});
+    }
+    
+    function toggleTheme() {
+        const html = document.documentElement;
+        const newTheme = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('vapordrop-theme', newTheme);
+        document.getElementById('themeIcon').textContent = newTheme === 'light' ? '☀️' : '🌙';
+    }
+    
+    function initTheme() {
+        const saved = localStorage.getItem('vapordrop-theme');
+        const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.getElementById('themeIcon').textContent = theme === 'light' ? '☀️' : '🌙';
+    }
+    
+    function generateQRCode() {
+        if (!sessionKeys) return;
+        const container = document.getElementById('qrcode');
+        container.innerHTML = '';
+        try {
+            new QRCode(container, { text: sessionKeys.numericId.full, width: 100, height: 100, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+        } catch (e) { container.innerHTML = '<span style="font-size:0.6rem;color:var(--error);">QR error</span>'; }
+    }
+    
+    function togglePubKey() {
+        const box = document.getElementById('pubkeyBox');
+        const icon = document.getElementById('pubkeyToggleIcon');
+        box.classList.toggle('hidden');
+        icon.textContent = box.classList.contains('hidden') ? '▶' : '▼';
+    }
+    
+    function getContacts() {
+        try { return JSON.parse(localStorage.getItem('vapordrop-contacts') || '{}'); } catch { return {}; }
+    }
+    
+    function saveContact(name, id) {
+        const contacts = getContacts();
+        contacts[name.toLowerCase()] = id;
+        localStorage.setItem('vapordrop-contacts', JSON.stringify(contacts));
+        renderContactList();
+    }
+    
+    function deleteContact(name) {
+        const contacts = getContacts();
+        delete contacts[name];
+        localStorage.setItem('vapordrop-contacts', JSON.stringify(contacts));
+        renderContactList();
+        showAlert('Contact deleted', 'success');
+    }
+    
+    function useContact(name) {
+        const contacts = getContacts();
+        if (contacts[name]) {
+            document.getElementById('recipientInput').value = name;
+            toggleContactBook();
+        }
+    }
+    
+    function toggleContactBook() {
+        const modal = document.getElementById('contactBookModal');
+        if (modal.classList.contains('hidden')) { renderContactList(); modal.classList.remove('hidden'); }
+        else modal.classList.add('hidden');
+    }
+    
+    function renderContactList() {
+        const contacts = getContacts();
+        const keys = Object.keys(contacts);
+        const list = document.getElementById('contactList');
+        
+        if (keys.length === 0) {
+            list.innerHTML = '<p style="color: var(--text-dim); text-align: center; padding: 2rem;">No contacts saved</p>';
+            return;
+        }
+        
+        list.innerHTML = keys.map(name => {
+            const id = contacts[name];
+            const display = id.length > 20 ? id.slice(0, 11) + '...' : id;
+            return `<div class="contact-item">
+                <div><div class="contact-name">${escapeHtml(name)}</div><div class="contact-id">${escapeHtml(display)}</div></div>
+                <div class="contact-actions">
+                    <button class="btn-use" onclick="useContact('${escapeHtml(name)}')">Use</button>
+                    <button class="btn-delete" onclick="deleteContact('${escapeHtml(name)}')">Delete</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    
+    function promptSaveContact() {
+        const recipient = document.getElementById('recipientInput').value.trim();
+        if (!recipient) { showAlert('Enter ID first'); return; }
+        const name = prompt('Contact name:');
+        if (name?.trim()) { saveContact(name.trim(), recipient); showAlert('Contact saved', 'success'); }
+    }
+    
+    // =============================================================================
+    // INIT
+    // =============================================================================
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        updateStatus(false, 'Disconnected');
+        
+        document.querySelectorAll('.word-input').forEach(input => {
+            input.addEventListener('input', () => validateWord(input));
+            input.addEventListener('keydown', e => { if (e.key === 'Enter' && !document.getElementById('loginBtn').disabled) login(); });
+        });
+        
+        updateStrength();
+        setupFileDragDrop();
+        
+        setInterval(() => { if (sessionKeys) checkPendingFiles(); }, 30000);
+    });
+    </script>
+</body>
+</html>
