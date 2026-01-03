@@ -65,7 +65,7 @@ Your identity is generated from common words you can easily remember:
 
 ```bash
 # Clone repository
-git clone https://github.com/virebent/vapordrop.git
+git clone [https://github.com/gabrix73/vapordrop.git](https://github.com/gabrix73/vapordrop)
 cd vapordrop
 
 # Create environment file with your passphrase
@@ -190,7 +190,6 @@ vapordrop/
 ├── .dockerignore        # Excludes .env from build
 └── static/
     ├── index.html       # Application
-    └── home.html        # Landing page
 ```
 
 ## Threat Model
@@ -232,4 +231,4 @@ MIT License - See [LICENSE](LICENSE) file.
 
 ---
 
-**No logs. No traces. No NIST. No compromise.**
+**All those who fight against oppression and the oppressors**
