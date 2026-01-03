@@ -1,0 +1,59 @@
+version: '3.8'
+
+# =============================================================================
+# VAPORDROP - Zero-Knowledge Dead Drop
+# Stack: Go + Tor + X25519 + XChaCha20 + BLAKE3 (all non-NIST)
+# =============================================================================
+
+services:
+  vapordrop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vapordrop
+    restart: unless-stopped
+    
+    # Key from file (create .env with: VAPOR_KEY=your-passphrase)
+    env_file:
+      - .env
+    
+    volumes:
+      # Persistent Tor keys (same onion address across restarts)
+      - tor-data:/app/.tor
+      # File storage (ephemeral, but survives container restart)
+      - file-storage:/app/file_storage
+    
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # For Tor
+    
+    # Read-only root filesystem
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M,mode=1777
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+    
+    # Logging (minimal for privacy)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tor-data:
+    driver: local
+  file-storage:
+    driver: local
