@@ -1,116 +1,27 @@
-# =============================================================================
-# VAPORDROP - DOCKER COMPOSE HARDENED
-# =============================================================================
+name: Docker Build & Push
 
-services:
-  vapordrop:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./static:/app/static:ro
-      - ./file_storage:/app/file_storage
-    container_name: vapordrop
-    
-    # =========================================================================
-    # SICUREZZA CRITICA
-    # =========================================================================
-    
-    # Permetti a MemGuard di bloccare la RAM
-    cap_add:
-      - IPC_LOCK
-    
-    # Rimuovi tutte le altre capabilities
-    cap_drop:
-      - ALL
-    
-    # Security options
-    security_opt:
-      - no-new-privileges:true
-      # Seccomp opzionale - può bloccare alcune syscall Tor
-      # - seccomp:seccomp-profile.json
-    
-    # Disabilita core dumps
-    ulimits:
-      core:
-        soft: 0
-        hard: 0
-      memlock:
-        soft: -1  # Unlimited - necessario per MemGuard
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    
-    # Read-only root filesystem
-    read_only: true
-    
-    # Filesystem temporanei in RAM
-    tmpfs:
-      - /tmp:size=256M,mode=1777,uid=1000,gid=1000
-      - /run:size=64M,mode=1777
-    
-    # =========================================================================
-    # ENVIRONMENT
-    # =========================================================================
-    environment:
-      # Chiave da passare esternamente
-      - VAPOR_KEY=${VAPOR_KEY:?VAPOR_KEY è obbligatoria}
-    
-    # =========================================================================
-    # NETWORKING
-    # =========================================================================
-    
-    # Network isolata
-    networks:
-      - vapor_net
-    
-    # Nessuna porta esposta (solo Hidden Service)
-    # ports: []
-    
-    # =========================================================================
-    # RISORSE
-    # =========================================================================
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 128M
-    
-    # =========================================================================
-    # RESTART POLICY
-    # =========================================================================
-    restart: unless-stopped
-    
-    # =========================================================================
-    # LOGGING MINIMALE (no sensitive data)
-    # =========================================================================
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    
-    # =========================================================================
-    # HEALTHCHECK
-    # =========================================================================
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -x vapordrop || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
 
-# =============================================================================
-# NETWORK ISOLATA
-# =============================================================================
-networks:
-  vapor_net:
-    driver: bridge
-    internal: false  # Necessario per connessione Tor
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            gabrix73/vapordrop:latest
+            gabrix73/vapordrop:${{ github.sha }}
