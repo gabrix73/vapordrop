@@ -1,8 +1,5 @@
-version: '3.8'
-
 # =============================================================================
-# VAPORDROP - Zero-Knowledge Dead Drop
-# Stack: Go + Tor + X25519 + XChaCha20 + BLAKE3 (all non-NIST)
+# VAPORDROP - DOCKER COMPOSE HARDENED
 # =============================================================================
 
 services:
@@ -10,50 +7,111 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vapordrop
-    restart: unless-stopped
-    
-    # Key from file (create .env with: VAPOR_KEY=your-passphrase)
-    env_file:
-      - .env
-    
     volumes:
-      # Persistent Tor keys (same onion address across restarts)
-      - tor-data:/app/.tor
-      # File storage (ephemeral, but survives container restart)
-      - file-storage:/app/file_storage
+      - ./static:/app/static:ro
+      - ./file_storage:/app/file_storage
+    container_name: vapordrop
     
-    # Security hardening
-    security_opt:
-      - no-new-privileges:true
+    # =========================================================================
+    # SICUREZZA CRITICA
+    # =========================================================================
+    
+    # Permetti a MemGuard di bloccare la RAM
+    cap_add:
+      - IPC_LOCK
+    
+    # Rimuovi tutte le altre capabilities
     cap_drop:
       - ALL
-    cap_add:
-      - NET_BIND_SERVICE  # For Tor
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      # Seccomp opzionale - può bloccare alcune syscall Tor
+      # - seccomp:seccomp-profile.json
+    
+    # Disabilita core dumps
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+      memlock:
+        soft: -1  # Unlimited - necessario per MemGuard
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     
     # Read-only root filesystem
     read_only: true
-    tmpfs:
-      - /tmp:size=256M,mode=1777
     
-    # Resource limits
+    # Filesystem temporanei in RAM
+    tmpfs:
+      - /tmp:size=256M,mode=1777,uid=1000,gid=1000
+      - /run:size=64M,mode=1777
+    
+    # =========================================================================
+    # ENVIRONMENT
+    # =========================================================================
+    environment:
+      # Chiave da passare esternamente
+      - VAPOR_KEY=${VAPOR_KEY:?VAPOR_KEY è obbligatoria}
+    
+    # =========================================================================
+    # NETWORKING
+    # =========================================================================
+    
+    # Network isolata
+    networks:
+      - vapor_net
+    
+    # Nessuna porta esposta (solo Hidden Service)
+    # ports: []
+    
+    # =========================================================================
+    # RISORSE
+    # =========================================================================
     deploy:
       resources:
         limits:
+          cpus: '2'
           memory: 512M
-          cpus: '1.0'
         reservations:
+          cpus: '0.5'
           memory: 128M
     
-    # Logging (minimal for privacy)
+    # =========================================================================
+    # RESTART POLICY
+    # =========================================================================
+    restart: unless-stopped
+    
+    # =========================================================================
+    # LOGGING MINIMALE (no sensitive data)
+    # =========================================================================
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    
+    # =========================================================================
+    # HEALTHCHECK
+    # =========================================================================
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x vapordrop || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
 
-volumes:
-  tor-data:
-    driver: local
-  file-storage:
-    driver: local
+# =============================================================================
+# NETWORK ISOLATA
+# =============================================================================
+networks:
+  vapor_net:
+    driver: bridge
+    internal: false  # Necessario per connessione Tor
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
