@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -12,109 +13,68 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/awnumar/memguard"
 	"github.com/cretz/bine/tor"
-	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/argon2"
 )
 
 // =============================================================================
-// VAPORDROP - ZERO-KNOWLEDGE DEAD DROP
-// =============================================================================
-// Security Stack (Internal - Non-NIST):
-//   - BLAKE3 (zeebo/blake3) - Hashing (NOT blake2b!)
-//   - Ed25519 (DJB) - Tor onion key derivation
-//   - Argon2id (PHC winner) - Key stretching
-//
-// Client Crypto (unchanged - handled by frontend):
-//   - P-256 ECDH - Key exchange
-//   - AES-GCM - Encryption
-//   - Server is ZERO-KNOWLEDGE: never decrypts, stores opaque blobs only
+// COSTANTI DI SICUREZZA
 // =============================================================================
 
 const (
-	Version = "2.2.0-hardened"
+	// Message retention - 7 giorni per dead drop
+	MessageTTL = 7 * 24 * time.Hour
+	GCInterval = 30 * time.Minute
 
-	// === EPHEMERAL DEAD DROP SETTINGS ===
-	MessageTTL  = 7 * 24 * time.Hour  // Messages auto-delete after 7 days
-	FileTTL     = 7 * 24 * time.Hour  // Files auto-delete after 7 days
-	IdentityTTL = 30 * 24 * time.Hour // Identity mappings expire after 30 days
-	GCInterval  = 15 * time.Minute    // Garbage collection frequency
-
-	// === ANTI-REPLAY ===
+	// Anti-replay
 	NonceExpiration = 24 * time.Hour
 	MaxNonceCache   = 100000
 
-	// === RATE LIMITING (Session-based for Tor compatibility) ===
-	RateLimitWindow       = 1 * time.Minute
-	MaxRequestsPerSession = 60
+	// Rate limiting per session token (Tor-compatible)
+	RateLimitWindow  = 1 * time.Minute
+	MaxRequestsPerIP = 60
 
-	// === TRAFFIC ANALYSIS PROTECTION ===
-	MinPadding = 512
-	MaxPadding = 8192
-	MinDelay   = 50 * time.Millisecond
-	MaxDelay   = 500 * time.Millisecond
+	// Padding
+	MinPadding = 256
+	MaxPadding = 4096
 
-	// === ARGON2ID (OWASP recommended) ===
+	// Timing jitter
+	MinDelay = 50 * time.Millisecond
+	MaxDelay = 500 * time.Millisecond
+
+	// Argon2id parameters
 	Argon2Time    = 3
-	Argon2Memory  = 64 * 1024 // 64 MB
+	Argon2Memory  = 64 * 1024
 	Argon2Threads = 4
 	Argon2KeyLen  = 32
 
-	// === IDENTITY REGISTRY ===
+	// Identity Registry
 	MaxIdentities = 100000
+	IdentityTTL   = 7 * 24 * time.Hour // 7 giorni come i messaggi
 
-	// === FILE TRANSFER ===
-	MaxFileSize     = 1 << 30 // 1 GB
-	FileChunkSize   = 1 << 20 // 1 MB chunks
-	MaxPendingFiles = 100
+	// File Transfer
+	MaxFileSize     = 1 << 30
+	FileChunkSize   = 1 << 20
+	FileTTL         = 7 * 24 * time.Hour
+	FileGCInterval  = 1 * time.Hour
+	MaxPendingFiles = 1000
 	FileStorageDir  = "./file_storage"
-	FileGCInterval  = 30 * time.Minute
-
-	// === CLIENT KEY FORMAT ===
-	// Frontend uses X25519 (DJB, non-NIST): 32 bytes = 64 hex
-	// Server is ZERO-KNOWLEDGE: validates SIZE only, never decrypts
-	X25519PublicKeyHex = 64
 )
 
 // =============================================================================
-// INPUT VALIDATION (Strict patterns)
-// =============================================================================
-
-var (
-	// Lowercase hex only
-	hexPattern = regexp.MustCompile(`^[a-f0-9]+$`)
-
-	// Numeric ID: "12345678-90" or "12345678"
-	numericIDFullPattern  = regexp.MustCompile(`^\d{8}-\d{2}$`)
-	numericIDShortPattern = regexp.MustCompile(`^\d{8}$`)
-
-	// File ID: 32 hex chars
-	fileIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
-
-	// Session token: 32 hex chars
-	sessionTokenPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
-
-	// Chunk number: digits only, max 6 digits
-	chunkNumPattern = regexp.MustCompile(`^\d{1,6}$`)
-)
-
-// =============================================================================
-// DATA STRUCTURES
+// STRUTTURE DATI
 // =============================================================================
 
 type Message struct {
 	ToHash     string    `json:"to_hash"`
 	CipherBlob string    `json:"cipher_blob"`
 	Nonce      string    `json:"nonce"`
-	Padding    string    `json:"padding,omitempty"`
+	Padding    string    `json:"padding"`
 	Timestamp  time.Time `json:"-"`
 }
 
@@ -136,101 +96,35 @@ type FileTransfer struct {
 }
 
 // =============================================================================
-// VOLATILE STORAGE (RAM ONLY - ZERO PERSISTENCE)
+// STORAGE VOLATILI (SOLO RAM)
 // =============================================================================
 
 var (
-	// Message store
-	messageStore      = make(map[string][]Message)
-	messageStoreMutex sync.RWMutex
-
-	// Anti-replay nonce cache (stores BLAKE3 hash of nonce)
+	store           = make(map[string][]Message)
+	storeMutex      sync.RWMutex
 	nonceCache      = make(map[string]time.Time)
 	nonceCacheMutex sync.RWMutex
-
-	// Rate limiting (session token hash → entry)
-	rateLimiter      = make(map[string]*RateLimitEntry)
+	rateLimiter     = make(map[string]*RateLimitEntry)
 	rateLimiterMutex sync.RWMutex
-
-	// Identity Registry
-	numericIDToKeys = make(map[string][]string)
-	keyToNumericID  = make(map[string]string)
+	numericIdToKeys = make(map[string][]string)
+	keyToNumericId  = make(map[string]string)
 	keyLastSeen     = make(map[string]time.Time)
 	identityMutex   sync.RWMutex
-
-	// File transfers
-	fileTransfers      = make(map[string]*FileTransfer)
+	fileTransfers   = make(map[string]*FileTransfer)
 	fileTransfersMutex sync.RWMutex
 )
 
 // =============================================================================
-// BLAKE3 HASHING (NON-NIST - zeebo/blake3)
+// FUNZIONI DI SICUREZZA
 // =============================================================================
 
-func blake3Hash(data []byte) []byte {
-	h := blake3.New()
-	h.Write(data)
-	return h.Sum(nil)
-}
-
-func blake3HashLen(data []byte, length int) []byte {
-	h := blake3.New()
-	h.Write(data)
-	out := make([]byte, length)
-	h.Digest().Read(out)
-	return out
-}
-
-func blake3Hex(data []byte) string {
-	return hex.EncodeToString(blake3Hash(data))
-}
-
-// =============================================================================
-// INPUT VALIDATION FUNCTIONS
-// =============================================================================
-
-func isValidHex(s string, expectedLen int) bool {
-	if len(s) != expectedLen {
-		return false
+func generatePadding(minSize, maxSize int) string {
+	size := minSize
+	if maxSize > minSize {
+		var sizeBuf [2]byte
+		rand.Read(sizeBuf[:])
+		size = minSize + int(sizeBuf[0])%(maxSize-minSize)
 	}
-	return hexPattern.MatchString(strings.ToLower(s))
-}
-
-func isValidPublicKey(s string) bool {
-	return isValidHex(s, X25519PublicKeyHex)
-}
-
-func isValidNumericID(s string) bool {
-	return numericIDFullPattern.MatchString(s) || numericIDShortPattern.MatchString(s)
-}
-
-func isValidFileID(s string) bool {
-	return fileIDPattern.MatchString(strings.ToLower(s))
-}
-
-func isValidSessionToken(s string) bool {
-	return sessionTokenPattern.MatchString(strings.ToLower(s))
-}
-
-func isValidNonce(s string) bool {
-	if len(s) < 32 || len(s) > 128 {
-		return false
-	}
-	return hexPattern.MatchString(strings.ToLower(s))
-}
-
-func isValidChunkNum(s string) bool {
-	return chunkNumPattern.MatchString(s)
-}
-
-// =============================================================================
-// SECURITY FUNCTIONS
-// =============================================================================
-
-func generatePadding() string {
-	var sizeBuf [2]byte
-	rand.Read(sizeBuf[:])
-	size := MinPadding + int(sizeBuf[0])%(MaxPadding-MinPadding)
 	padding := make([]byte, size)
 	rand.Read(padding)
 	return hex.EncodeToString(padding)
@@ -239,8 +133,8 @@ func generatePadding() string {
 func randomDelay() {
 	var delayBuf [2]byte
 	rand.Read(delayBuf[:])
-	delayRange := int(MaxDelay - MinDelay)
-	delay := MinDelay + time.Duration(int(delayBuf[0])*delayRange/256)
+	delayRange := MaxDelay - MinDelay
+	delay := MinDelay + time.Duration(int(delayBuf[0])*int(delayRange)/256)
 	time.Sleep(delay)
 }
 
@@ -252,23 +146,15 @@ func constantTimeCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-// Anti-replay: check and store nonce
 func checkNonce(nonce string) bool {
-	if !isValidNonce(nonce) {
+	if len(nonce) < 32 {
 		return false
 	}
-
-	// Store BLAKE3 hash of nonce (privacy)
-	nonceHash := hex.EncodeToString(blake3HashLen([]byte(nonce), 16))
-
 	nonceCacheMutex.Lock()
 	defer nonceCacheMutex.Unlock()
-
-	if _, exists := nonceCache[nonceHash]; exists {
-		return false // Replay detected
+	if _, exists := nonceCache[nonce]; exists {
+		return false
 	}
-
-	// Cleanup old nonces if cache full
 	if len(nonceCache) >= MaxNonceCache {
 		cutoff := time.Now().Add(-NonceExpiration)
 		for n, t := range nonceCache {
@@ -277,127 +163,28 @@ func checkNonce(nonce string) bool {
 			}
 		}
 	}
-
-	nonceCache[nonceHash] = time.Now()
+	nonceCache[nonce] = time.Now()
 	return true
 }
 
-// Session-based rate limiting (Tor compatible)
-func checkRateLimit(r *http.Request) bool {
-	// Get session token from header
-	token := r.Header.Get("X-Session-Token")
-	if token == "" {
-		// Fallback: generate from request characteristics
-		token = r.Header.Get("User-Agent") + r.Header.Get("Accept-Language")
-	}
-
-	// Hash for privacy
-	tokenHash := hex.EncodeToString(blake3HashLen([]byte(token), 16))
-
+func checkRateLimit(ip string) bool {
 	rateLimiterMutex.Lock()
 	defer rateLimiterMutex.Unlock()
-
 	now := time.Now()
-	entry, exists := rateLimiter[tokenHash]
-
+	entry, exists := rateLimiter[ip]
 	if !exists || now.After(entry.ResetTime) {
-		rateLimiter[tokenHash] = &RateLimitEntry{
-			Count:     1,
-			ResetTime: now.Add(RateLimitWindow),
-		}
+		rateLimiter[ip] = &RateLimitEntry{Count: 1, ResetTime: now.Add(RateLimitWindow)}
 		return true
 	}
-
-	if entry.Count >= MaxRequestsPerSession {
+	if entry.Count >= MaxRequestsPerIP {
 		return false
 	}
-
 	entry.Count++
 	return true
 }
 
-// =============================================================================
-// SECURITY HEADERS MIDDLEWARE
-// =============================================================================
-
-func securityHeaders(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Anti-MIME sniffing
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-
-		// Anti-clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
-
-		// XSS protection
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-
-		// CSP - strict but compatible with inline scripts for QR
-		csp := "default-src 'none'; " +
-			"script-src 'self' 'unsafe-inline'; " +
-			"style-src 'self' 'unsafe-inline'; " +
-			"img-src 'self' data: blob:; " +
-			"connect-src 'self'; " +
-			"form-action 'self'; " +
-			"frame-ancestors 'none'; " +
-			"base-uri 'self'"
-		w.Header().Set("Content-Security-Policy", csp)
-
-		// Permissions Policy
-		w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()")
-
-		// Referrer Policy
-		w.Header().Set("Referrer-Policy", "no-referrer")
-
-		// No caching for API
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-		}
-
-		next(w, r)
-	}
-}
-
-// =============================================================================
-// PATH SECURITY
-// =============================================================================
-
-func safeFilePath(baseDir, fileID string) (string, error) {
-	if !isValidFileID(fileID) {
-		return "", fmt.Errorf("invalid file ID")
-	}
-
-	cleanPath := filepath.Clean(filepath.Join(baseDir, fileID))
-
-	absBase, err := filepath.Abs(baseDir)
-	if err != nil {
-		return "", err
-	}
-
-	absPath, err := filepath.Abs(cleanPath)
-	if err != nil {
-		return "", err
-	}
-
-	if !strings.HasPrefix(absPath, absBase) {
-		return "", fmt.Errorf("path traversal detected")
-	}
-
-	return cleanPath, nil
-}
-
-func safeChunkPath(baseDir, fileID string, chunkNum int) (string, error) {
-	filePath, err := safeFilePath(baseDir, fileID)
-	if err != nil {
-		return "", err
-	}
-
-	if chunkNum < 0 || chunkNum > 1100 { // Max ~1.1TB
-		return "", fmt.Errorf("invalid chunk number")
-	}
-
-	return filepath.Join(filePath, fmt.Sprintf("%d", chunkNum)), nil
+func getClientIP(r *http.Request) string {
+	return r.RemoteAddr
 }
 
 // =============================================================================
@@ -406,13 +193,11 @@ func safeChunkPath(baseDir, fileID string, chunkNum int) (string, error) {
 
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	if !checkRateLimit(r) {
+	if !checkRateLimit(getClientIP(r)) {
 		http.Error(w, "Rate limited", http.StatusTooManyRequests)
 		return
 	}
@@ -422,33 +207,34 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		PublicKey string `json:"public_key"`
 		Nonce     string `json:"nonce"`
 	}
-
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	// Validate numeric ID
-	if !isValidNumericID(req.NumericID) {
+	// Validate numeric ID: 8 digits or 8-2 format
+	if len(req.NumericID) != 11 && len(req.NumericID) != 8 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_numeric_id"})
+		w.Write([]byte(`{"error":"invalid_numeric_id"}`))
 		return
 	}
-
-	// Validate public key (P-256 = 130 hex)
-	if !isValidPublicKey(req.PublicKey) {
+	if len(req.NumericID) == 11 && req.NumericID[8] != '-' {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_public_key"})
+		w.Write([]byte(`{"error":"invalid_numeric_id_format"}`))
 		return
 	}
 
-	// Normalize to lowercase
-	req.PublicKey = strings.ToLower(req.PublicKey)
+	// Validate public key (130 hex = P-256 uncompressed)
+	if len(req.PublicKey) != 130 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_public_key_length"}`))
+		return
+	}
 
-	// Anti-replay
-	if req.Nonce != "" && !checkNonce(req.Nonce) {
+	if len(req.Nonce) >= 32 && !checkNonce(req.Nonce) {
 		http.Error(w, "Replay detected", http.StatusConflict)
 		return
 	}
@@ -457,83 +243,70 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	defer identityMutex.Unlock()
 
 	now := time.Now()
-
-	// Check if already registered
-	if existingID, exists := keyToNumericID[req.PublicKey]; exists {
+	if existingId, exists := keyToNumericId[req.PublicKey]; exists {
 		keyLastSeen[req.PublicKey] = now
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":     "exists",
-			"numeric_id": existingID,
-			"collision":  len(numericIDToKeys[existingID]) > 1,
+			"numeric_id": existingId,
+			"collision":  len(numericIdToKeys[existingId]) > 1,
 		})
 		return
 	}
 
-	// Check capacity
-	if len(keyToNumericID) >= MaxIdentities {
-		http.Error(w, "Registry full", http.StatusServiceUnavailable)
+	if len(keyToNumericId) >= MaxIdentities {
+		http.Error(w, "Max identities reached", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Register
-	numericIDToKeys[req.NumericID] = append(numericIDToKeys[req.NumericID], req.PublicKey)
-
-	// Also register short ID
-	shortID := strings.Split(req.NumericID, "-")[0]
-	if shortID != req.NumericID {
-		numericIDToKeys[shortID] = append(numericIDToKeys[shortID], req.PublicKey)
+	numericIdToKeys[req.NumericID] = append(numericIdToKeys[req.NumericID], req.PublicKey)
+	shortId := strings.Split(req.NumericID, "-")[0]
+	if shortId != req.NumericID {
+		numericIdToKeys[shortId] = append(numericIdToKeys[shortId], req.PublicKey)
 	}
-
-	keyToNumericID[req.PublicKey] = req.NumericID
+	keyToNumericId[req.PublicKey] = req.NumericID
 	keyLastSeen[req.PublicKey] = now
 
-	collision := len(numericIDToKeys[req.NumericID]) > 1
+	hasCollision := len(numericIdToKeys[req.NumericID]) > 1
+	if hasCollision {
+		log.Printf("⚠️  COLLISION: ID %s has %d keys", req.NumericID, len(numericIdToKeys[req.NumericID]))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":     "registered",
 		"numeric_id": req.NumericID,
-		"collision":  collision,
+		"collision":  hasCollision,
 	})
 }
 
 func handleResolve(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	if !checkRateLimit(r) {
+	if !checkRateLimit(getClientIP(r)) {
 		http.Error(w, "Rate limited", http.StatusTooManyRequests)
 		return
 	}
 
-	// Extract ID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/resolve/")
-	if path == "" || !isValidNumericID(path) {
-		http.Error(w, "Invalid ID", http.StatusBadRequest)
+	if path == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
 		return
 	}
 
 	identityMutex.RLock()
-	keys, exists := numericIDToKeys[path]
+	keys, exists := numericIdToKeys[path]
 	identityMutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-
 	if !exists || len(keys) == 0 {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"numeric_id":  path,
-			"public_keys": []string{},
-			"found":       false,
-		})
+		w.Write([]byte(`{"numeric_id":"","public_keys":[],"found":false}`))
 		return
 	}
 
-	// Update last seen
 	identityMutex.Lock()
 	now := time.Now()
 	for _, k := range keys {
@@ -551,28 +324,27 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	identityMutex.RLock()
-	totalKeys := len(keyToNumericID)
+	totalKeys := len(keyToNumericId)
 	collisions := 0
-	for id, keys := range numericIDToKeys {
+	for id, keys := range numericIdToKeys {
 		if strings.Contains(id, "-") && len(keys) > 1 {
 			collisions++
 		}
 	}
 	identityMutex.RUnlock()
 
-	messageStoreMutex.RLock()
+	storeMutex.RLock()
 	pendingMsgs := 0
-	for _, msgs := range messageStore {
+	for _, msgs := range store {
 		pendingMsgs += len(msgs)
 	}
-	messageStoreMutex.RUnlock()
+	storeMutex.RUnlock()
 
 	fileTransfersMutex.RLock()
 	pendingFiles := len(fileTransfers)
@@ -584,81 +356,85 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		"id_collisions":         collisions,
 		"pending_messages":      pendingMsgs,
 		"pending_files":         pendingFiles,
-		"message_ttl_days":      int(MessageTTL.Hours() / 24),
-		"zero_knowledge":        true,
-		"version":               Version,
 	})
 }
 
 // =============================================================================
-// MESSAGE HANDLERS (ZERO-KNOWLEDGE)
+// MESSAGE HANDLERS
 // =============================================================================
 
 func handleSend(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	if !checkRateLimit(r) {
+	if !checkRateLimit(getClientIP(r)) {
 		http.Error(w, "Rate limited", http.StatusTooManyRequests)
 		return
 	}
 
 	var msg Message
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&msg); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		log.Printf("❌ Send: Invalid JSON: %v", err)
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	// Validate recipient key
-	if !isValidPublicKey(msg.ToHash) {
-		http.Error(w, "Invalid recipient key", http.StatusBadRequest)
+	// Validate P-256 uncompressed = 130 hex
+	if len(msg.ToHash) != 130 {
+		log.Printf("❌ Send: Invalid to_hash length: %d (expected 130)", len(msg.ToHash))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_to_hash","expected":130,"got":` + fmt.Sprintf("%d", len(msg.ToHash)) + `}`))
 		return
 	}
 
-	// Validate cipher blob exists
 	if len(msg.CipherBlob) < 32 {
-		http.Error(w, "Invalid cipher blob", http.StatusBadRequest)
+		log.Printf("❌ Send: CipherBlob too short: %d", len(msg.CipherBlob))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"cipher_blob_too_short"}`))
 		return
 	}
 
-	// Validate nonce
-	if !isValidNonce(msg.Nonce) {
-		http.Error(w, "Invalid nonce", http.StatusBadRequest)
+	if len(msg.Nonce) < 32 {
+		log.Printf("❌ Send: Nonce too short: %d", len(msg.Nonce))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"nonce_too_short"}`))
 		return
 	}
 
-	// Anti-replay
 	if !checkNonce(msg.Nonce) {
+		log.Printf("❌ Send: Replay attack detected")
 		http.Error(w, "Replay detected", http.StatusConflict)
 		return
 	}
 
-	// Normalize
-	msg.ToHash = strings.ToLower(msg.ToHash)
-	msg.Padding = generatePadding()
-	msg.Timestamp = time.Now()
+	if len(msg.Padding) == 0 {
+		msg.Padding = generatePadding(MinPadding, MaxPadding)
+	}
 
-	messageStoreMutex.Lock()
-	messageStore[msg.ToHash] = append(messageStore[msg.ToHash], msg)
-	messageStoreMutex.Unlock()
+	msg.Timestamp = time.Now()
+	storeMutex.Lock()
+	store[msg.ToHash] = append(store[msg.ToHash], msg)
+	storeMutex.Unlock()
+
+	log.Printf("✅ Message stored for %s...%s", msg.ToHash[:8], msg.ToHash[len(msg.ToHash)-8:])
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
 func handleFetch(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	if !checkRateLimit(r) {
+	if !checkRateLimit(getClientIP(r)) {
 		http.Error(w, "Rate limited", http.StatusTooManyRequests)
 		return
 	}
@@ -667,19 +443,23 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 		MyHash string `json:"my_hash"`
 		Nonce  string `json:"nonce"`
 	}
-
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	if !isValidPublicKey(req.MyHash) {
-		http.Error(w, "Invalid key", http.StatusBadRequest)
+	if len(req.MyHash) != 130 {
+		log.Printf("❌ Fetch: Invalid my_hash length: %d", len(req.MyHash))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_my_hash"}`))
 		return
 	}
 
-	if !isValidNonce(req.Nonce) {
-		http.Error(w, "Invalid nonce", http.StatusBadRequest)
+	if len(req.Nonce) < 32 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"nonce_too_short"}`))
 		return
 	}
 
@@ -688,48 +468,44 @@ func handleFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.MyHash = strings.ToLower(req.MyHash)
-
-	// Constant-time lookup and delete
-	messageStoreMutex.Lock()
+	storeMutex.Lock()
 	var msgs []Message
-	for hash, m := range messageStore {
+	for hash, m := range store {
 		if constantTimeCompare(hash, req.MyHash) {
 			msgs = m
-			delete(messageStore, hash) // Ephemeral: delete after fetch
+			delete(store, hash)
 			break
 		}
 	}
-	messageStoreMutex.Unlock()
+	storeMutex.Unlock()
 
-	// Remove internal padding from response
-	for i := range msgs {
-		msgs[i].Padding = ""
+	response := struct {
+		Messages []Message `json:"messages"`
+		Padding  string    `json:"padding"`
+	}{
+		Messages: msgs,
+		Padding:  generatePadding(MinPadding, MaxPadding),
 	}
 
 	if msgs == nil {
-		msgs = []Message{}
+		response.Messages = []Message{}
+	} else {
+		log.Printf("📨 Delivered %d messages to %s...%s", len(msgs), req.MyHash[:8], req.MyHash[len(req.MyHash)-8:])
 	}
 
-	response := map[string]interface{}{
-		"messages": msgs,
-		"padding":  generatePadding(),
+	for i := range response.Messages {
+		response.Messages[i].Padding = ""
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	json.NewEncoder(w).Encode(response)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":         "alive",
-		"zero_knowledge": true,
-		"ttl_days":       int(MessageTTL.Hours() / 24),
-		"version":        Version,
-	})
+	w.Write([]byte(`{"status":"alive"}`))
 }
 
 // =============================================================================
@@ -738,13 +514,11 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleFileInit(w http.ResponseWriter, r *http.Request) {
 	randomDelay()
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	if !checkRateLimit(r) {
+	if !checkRateLimit(getClientIP(r)) {
 		http.Error(w, "Rate limited", http.StatusTooManyRequests)
 		return
 	}
@@ -756,68 +530,76 @@ func handleFileInit(w http.ResponseWriter, r *http.Request) {
 		FileSize   int64  `json:"filesize"`
 		ChunkCount int    `json:"chunk_count"`
 	}
-
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
-
-	// Validate keys
-	if !isValidPublicKey(req.FromPubKey) || !isValidPublicKey(req.ToPubKey) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ FileInit: Invalid JSON: %v", err)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_pubkey"})
+		w.Write([]byte(`{"error":"invalid_json"}`))
 		return
 	}
 
-	// Validate size
+	// Validate public keys
+	if len(req.FromPubKey) != 130 {
+		log.Printf("❌ FileInit: Invalid from_pubkey length: %d", len(req.FromPubKey))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_from_pubkey","length":` + fmt.Sprintf("%d", len(req.FromPubKey)) + `}`))
+		return
+	}
+	if len(req.ToPubKey) != 130 {
+		log.Printf("❌ FileInit: Invalid to_pubkey length: %d", len(req.ToPubKey))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_to_pubkey","length":` + fmt.Sprintf("%d", len(req.ToPubKey)) + `}`))
+		return
+	}
+
 	if req.FileSize <= 0 || req.FileSize > MaxFileSize {
+		log.Printf("❌ FileInit: Invalid filesize: %d", req.FileSize)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_filesize"})
+		w.Write([]byte(`{"error":"invalid_filesize"}`))
 		return
 	}
 
-	// Validate chunk count
-	maxChunks := int(MaxFileSize/FileChunkSize) + 1
-	if req.ChunkCount <= 0 || req.ChunkCount > maxChunks {
+	if req.ChunkCount <= 0 || req.ChunkCount > int(MaxFileSize/FileChunkSize)+1 {
+		log.Printf("❌ FileInit: Invalid chunk_count: %d", req.ChunkCount)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid_chunk_count"})
+		w.Write([]byte(`{"error":"invalid_chunk_count"}`))
 		return
 	}
 
 	fileTransfersMutex.RLock()
 	if len(fileTransfers) >= MaxPendingFiles {
 		fileTransfersMutex.RUnlock()
-		http.Error(w, "Too many pending files", http.StatusServiceUnavailable)
+		log.Printf("❌ FileInit: Too many pending files")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"too_many_pending_files"}`))
 		return
 	}
 	fileTransfersMutex.RUnlock()
 
-	// Generate secure file ID
+	// Generate unique file ID
 	idBytes := make([]byte, 16)
 	rand.Read(idBytes)
 	fileID := hex.EncodeToString(idBytes)
 
-	// Create directory
-	filePath, err := safeFilePath(FileStorageDir, fileID)
-	if err != nil {
-		log.Printf("Path error: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
+	// Create file directory
+	filePath := fmt.Sprintf("%s/%s", FileStorageDir, fileID)
 	if err := os.MkdirAll(filePath, 0700); err != nil {
-		log.Printf("Mkdir error: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
+		log.Printf("❌ FileInit: Cannot create directory: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"storage_error"}`))
 		return
 	}
 
 	ft := &FileTransfer{
 		ID:             fileID,
-		FromPubKey:     strings.ToLower(req.FromPubKey),
-		ToPubKey:       strings.ToLower(req.ToPubKey),
+		FromPubKey:     req.FromPubKey,
+		ToPubKey:       req.ToPubKey,
 		FileName:       req.FileName,
 		FileSize:       req.FileSize,
 		ChunkCount:     req.ChunkCount,
@@ -830,7 +612,7 @@ func handleFileInit(w http.ResponseWriter, r *http.Request) {
 	fileTransfers[fileID] = ft
 	fileTransfersMutex.Unlock()
 
-	log.Printf("📁 File init: %s (%d bytes, %d chunks)", fileID[:8], req.FileSize, req.ChunkCount)
+	log.Printf("📁 File transfer initialized: %s (%d bytes, %d chunks)", fileID, req.FileSize, req.ChunkCount)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -845,63 +627,46 @@ func handleFileChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse path: /api/file/chunk/{id}/{num}
-	path := strings.TrimPrefix(r.URL.Path, "/api/file/chunk/")
-	parts := strings.Split(path, "/")
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/file/chunk/"), "/")
 	if len(parts) != 2 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
 	fileID := parts[0]
-	chunkNumStr := parts[1]
-
-	if !isValidFileID(fileID) {
-		http.Error(w, "Invalid file ID", http.StatusBadRequest)
-		return
-	}
-
-	if !isValidChunkNum(chunkNumStr) {
-		http.Error(w, "Invalid chunk number", http.StatusBadRequest)
-		return
-	}
-
-	chunkNum, _ := strconv.Atoi(chunkNumStr)
+	chunkNum := 0
+	fmt.Sscanf(parts[1], "%d", &chunkNum)
 
 	fileTransfersMutex.RLock()
 	ft, exists := fileTransfers[fileID]
 	fileTransfersMutex.RUnlock()
 
 	if !exists {
-		http.Error(w, "File not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"file_not_found"}`))
 		return
 	}
 
 	if chunkNum < 0 || chunkNum >= ft.ChunkCount {
-		http.Error(w, "Invalid chunk number", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_chunk_number"}`))
 		return
 	}
 
-	// Read chunk data (max 1MB + overhead)
-	maxSize := int64(FileChunkSize + 4096)
-	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
-
+	maxChunkSize := FileChunkSize + 1024
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxChunkSize))
 	chunkData, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Printf("❌ FileChunk: Read error: %v", err)
 		http.Error(w, "Read error", http.StatusBadRequest)
 		return
 	}
 
-	// Save chunk
-	chunkPath, err := safeChunkPath(FileStorageDir, fileID, chunkNum)
-	if err != nil {
-		log.Printf("Chunk path error: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
+	chunkPath := fmt.Sprintf("%s/%s/%d", FileStorageDir, fileID, chunkNum)
 	if err := os.WriteFile(chunkPath, chunkData, 0600); err != nil {
-		log.Printf("Write error: %v", err)
+		log.Printf("❌ FileChunk: Write error: %v", err)
 		http.Error(w, "Write error", http.StatusInternalServerError)
 		return
 	}
@@ -910,7 +675,7 @@ func handleFileChunk(w http.ResponseWriter, r *http.Request) {
 	ft.ChunksReceived++
 	if ft.ChunksReceived >= ft.ChunkCount {
 		ft.Ready = true
-		log.Printf("📁 File ready: %s", fileID[:8])
+		log.Printf("📁 File ready: %s", fileID)
 	}
 	fileTransfersMutex.Unlock()
 
@@ -924,21 +689,18 @@ func handleFileChunk(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleFilePending(w http.ResponseWriter, r *http.Request) {
-	randomDelay()
-
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Extract pubkey from path
 	pubkey := strings.TrimPrefix(r.URL.Path, "/api/file/pending/")
-	if !isValidPublicKey(pubkey) {
-		http.Error(w, "Invalid key", http.StatusBadRequest)
+	if len(pubkey) != 130 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid_pubkey"}`))
 		return
 	}
-
-	pubkey = strings.ToLower(pubkey)
 
 	fileTransfersMutex.RLock()
 	var pending []map[string]interface{}
@@ -970,30 +732,22 @@ func handleFileDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse path: /api/file/download/{id}/{num}
-	path := strings.TrimPrefix(r.URL.Path, "/api/file/download/")
-	parts := strings.Split(path, "/")
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/file/download/"), "/")
 	if len(parts) != 2 {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
 
 	fileID := parts[0]
-	chunkNumStr := parts[1]
-
-	if !isValidFileID(fileID) || !isValidChunkNum(chunkNumStr) {
-		http.Error(w, "Invalid parameters", http.StatusBadRequest)
-		return
-	}
-
-	chunkNum, _ := strconv.Atoi(chunkNumStr)
+	chunkNum := 0
+	fmt.Sscanf(parts[1], "%d", &chunkNum)
 
 	fileTransfersMutex.RLock()
 	ft, exists := fileTransfers[fileID]
 	fileTransfersMutex.RUnlock()
 
 	if !exists || !ft.Ready {
-		http.Error(w, "File not found", http.StatusNotFound)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
@@ -1002,12 +756,7 @@ func handleFileDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chunkPath, err := safeChunkPath(FileStorageDir, fileID, chunkNum)
-	if err != nil {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-
+	chunkPath := fmt.Sprintf("%s/%s/%d", FileStorageDir, fileID, chunkNum)
 	chunkData, err := os.ReadFile(chunkPath)
 	if err != nil {
 		http.Error(w, "Read error", http.StatusNotFound)
@@ -1015,7 +764,6 @@ func handleFileDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.Itoa(len(chunkData)))
 	w.Write(chunkData)
 }
 
@@ -1026,8 +774,8 @@ func handleFileComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fileID := strings.TrimPrefix(r.URL.Path, "/api/file/complete/")
-	if !isValidFileID(fileID) {
-		http.Error(w, "Invalid file ID", http.StatusBadRequest)
+	if fileID == "" {
+		http.Error(w, "Missing file ID", http.StatusBadRequest)
 		return
 	}
 
@@ -1039,54 +787,49 @@ func handleFileComplete(w http.ResponseWriter, r *http.Request) {
 	fileTransfersMutex.Unlock()
 
 	if !exists {
-		http.Error(w, "File not found", http.StatusNotFound)
+		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
 
-	// Delete file data
-	filePath, err := safeFilePath(FileStorageDir, fileID)
-	if err == nil {
-		if err := os.RemoveAll(filePath); err != nil {
-			log.Printf("Delete error: %v", err)
-		} else {
-			log.Printf("🗑️ File deleted: %s", fileID[:8])
-		}
+	filePath := fmt.Sprintf("%s/%s", FileStorageDir, fileID)
+	if err := os.RemoveAll(filePath); err != nil {
+		log.Printf("⚠️  FileComplete: Cleanup error: %v", err)
+	} else {
+		log.Printf("🗑️  File deleted: %s", fileID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+	w.Write([]byte(`{"status":"deleted"}`))
 }
 
 // =============================================================================
-// GARBAGE COLLECTORS (EPHEMERAL ENFORCEMENT)
+// GARBAGE COLLECTORS
 // =============================================================================
 
 func startMessageGC() {
 	for {
 		time.Sleep(GCInterval)
-
-		messageStoreMutex.Lock()
+		storeMutex.Lock()
 		cutoff := time.Now().Add(-MessageTTL)
-		deleted := 0
-		for hash, msgs := range messageStore {
+		removed := 0
+		for h, msgs := range store {
 			var keep []Message
 			for _, m := range msgs {
 				if m.Timestamp.After(cutoff) {
 					keep = append(keep, m)
 				} else {
-					deleted++
+					removed++
 				}
 			}
 			if len(keep) > 0 {
-				messageStore[hash] = keep
+				store[h] = keep
 			} else {
-				delete(messageStore, hash)
+				delete(store, h)
 			}
 		}
-		messageStoreMutex.Unlock()
-
-		if deleted > 0 {
-			log.Printf("🧹 Message GC: deleted %d expired messages", deleted)
+		storeMutex.Unlock()
+		if removed > 0 {
+			log.Printf("🧹 Message GC: removed %d expired", removed)
 		}
 	}
 }
@@ -1094,33 +837,30 @@ func startMessageGC() {
 func startNonceGC() {
 	for {
 		time.Sleep(NonceExpiration / 2)
-
 		nonceCacheMutex.Lock()
 		cutoff := time.Now().Add(-NonceExpiration)
-		deleted := 0
+		removed := 0
 		for n, t := range nonceCache {
 			if t.Before(cutoff) {
 				delete(nonceCache, n)
-				deleted++
+				removed++
 			}
 		}
 		nonceCacheMutex.Unlock()
-
-		if deleted > 0 {
-			log.Printf("🧹 Nonce GC: cleared %d expired nonces", deleted)
+		if removed > 0 {
+			log.Printf("🧹 Nonce GC: removed %d expired", removed)
 		}
 	}
 }
 
 func startRateLimitGC() {
 	for {
-		time.Sleep(RateLimitWindow * 2)
-
+		time.Sleep(RateLimitWindow)
 		rateLimiterMutex.Lock()
 		now := time.Now()
-		for key, entry := range rateLimiter {
+		for ip, entry := range rateLimiter {
 			if now.After(entry.ResetTime) {
-				delete(rateLimiter, key)
+				delete(rateLimiter, ip)
 			}
 		}
 		rateLimiterMutex.Unlock()
@@ -1130,17 +870,13 @@ func startRateLimitGC() {
 func startIdentityGC() {
 	for {
 		time.Sleep(1 * time.Hour)
-
 		identityMutex.Lock()
 		cutoff := time.Now().Add(-IdentityTTL)
-		deleted := 0
-
+		removed := 0
 		for pubkey, lastSeen := range keyLastSeen {
 			if lastSeen.Before(cutoff) {
-				numericID := keyToNumericID[pubkey]
-
-				// Remove from numericIDToKeys
-				if keys, exists := numericIDToKeys[numericID]; exists {
+				numericId := keyToNumericId[pubkey]
+				if keys, exists := numericIdToKeys[numericId]; exists {
 					var newKeys []string
 					for _, k := range keys {
 						if k != pubkey {
@@ -1148,68 +884,55 @@ func startIdentityGC() {
 						}
 					}
 					if len(newKeys) > 0 {
-						numericIDToKeys[numericID] = newKeys
+						numericIdToKeys[numericId] = newKeys
 					} else {
-						delete(numericIDToKeys, numericID)
+						delete(numericIdToKeys, numericId)
 					}
 				}
-
-				// Remove short ID mapping too
-				shortID := strings.Split(numericID, "-")[0]
-				if shortID != numericID {
-					if keys, exists := numericIDToKeys[shortID]; exists {
-						var newKeys []string
-						for _, k := range keys {
-							if k != pubkey {
-								newKeys = append(newKeys, k)
-							}
-						}
-						if len(newKeys) > 0 {
-							numericIDToKeys[shortID] = newKeys
-						} else {
-							delete(numericIDToKeys, shortID)
+				shortId := strings.Split(numericId, "-")[0]
+				if keys, exists := numericIdToKeys[shortId]; exists {
+					var newKeys []string
+					for _, k := range keys {
+						if k != pubkey {
+							newKeys = append(newKeys, k)
 						}
 					}
+					if len(newKeys) > 0 {
+						numericIdToKeys[shortId] = newKeys
+					} else {
+						delete(numericIdToKeys, shortId)
+					}
 				}
-
-				delete(keyToNumericID, pubkey)
+				delete(keyToNumericId, pubkey)
 				delete(keyLastSeen, pubkey)
-				deleted++
+				removed++
 			}
 		}
 		identityMutex.Unlock()
-
-		if deleted > 0 {
-			log.Printf("🧹 Identity GC: removed %d inactive identities", deleted)
+		if removed > 0 {
+			log.Printf("🧹 Identity GC: removed %d inactive", removed)
 		}
 	}
 }
 
 func startFileGC() {
-	// Ensure directory exists
 	os.MkdirAll(FileStorageDir, 0700)
-
 	for {
 		time.Sleep(FileGCInterval)
-
 		fileTransfersMutex.Lock()
 		cutoff := time.Now().Add(-FileTTL)
-		deleted := 0
-
+		removed := 0
 		for id, ft := range fileTransfers {
 			if ft.CreatedAt.Before(cutoff) {
-				filePath, err := safeFilePath(FileStorageDir, id)
-				if err == nil {
-					os.RemoveAll(filePath)
-				}
+				filePath := fmt.Sprintf("%s/%s", FileStorageDir, id)
+				os.RemoveAll(filePath)
 				delete(fileTransfers, id)
-				deleted++
+				removed++
 			}
 		}
 		fileTransfersMutex.Unlock()
-
-		if deleted > 0 {
-			log.Printf("🧹 File GC: removed %d expired files", deleted)
+		if removed > 0 {
+			log.Printf("🧹 File GC: removed %d expired", removed)
 		}
 	}
 }
@@ -1219,33 +942,28 @@ func startFileGC() {
 // =============================================================================
 
 func main() {
-	// Memory protection
 	memguard.CatchInterrupt()
 	defer memguard.Purge()
 
-	// Get Tor key passphrase
 	envKey := os.Getenv("VAPOR_KEY")
 	if len(envKey) < 16 {
-		log.Fatal("❌ VAPOR_KEY required (min 16 chars)")
+		log.Fatal("❌ VAPOR_KEY missing or too short (min 16 chars)")
 	}
 
-	fmt.Println("⚙️  Deriving Tor key with Argon2id...")
+	fmt.Println("⚙️  Key derivation with Argon2id (~64MB RAM, ~1 sec)...")
 
-	// Secure enclave for passphrase
 	secretEnclave := memguard.NewBufferFromBytes([]byte(envKey))
-
-	// Zero environment variable
 	for i := range envKey {
-		envKey = envKey[:i] + "\x00" + envKey[i+1:]
+		envKey = envKey[:i] + "X" + envKey[i+1:]
 	}
+	envKey = ""
 
-	// BLAKE3-based salt (non-NIST)
-	salt := blake3Hash([]byte("vapordrop-tor-onion-key-v2"))
+	saltInput := "vapordrop-v1-onion-key-derivation-salt"
+	salt := sha256.Sum256([]byte(saltInput))
 
-	// Argon2id key derivation
 	seed := argon2.IDKey(
 		secretEnclave.Bytes(),
-		salt,
+		salt[:],
 		Argon2Time,
 		Argon2Memory,
 		Argon2Threads,
@@ -1253,22 +971,18 @@ func main() {
 	)
 	secretEnclave.Destroy()
 
-	// Clear salt
 	for i := range salt {
 		salt[i] = 0
 	}
 
-	// Generate Ed25519 key
 	onionKey := ed25519.NewKeyFromSeed(seed)
-
-	// Clear seed
 	for i := range seed {
 		seed[i] = 0
 	}
+	seed = nil
 
-	fmt.Println("⚙️  Starting Tor...")
+	fmt.Println("⚙️  Starting VaporDrop Node...")
 
-	// Start Tor
 	conf := &tor.StartConf{
 		TempDataDirBase: os.TempDir(),
 		NoAutoSocksPort: true,
@@ -1276,88 +990,77 @@ func main() {
 
 	t, err := tor.Start(context.Background(), conf)
 	if err != nil {
-		log.Panicf("❌ Tor error: %v", err)
+		log.Panicf("❌ Tor Start Error: %v", err)
 	}
 	defer t.Close()
 
-	fmt.Println("⚙️  Creating hidden service...")
+	fmt.Println("⚙️  Creating Onion Service v3...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	listenCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	onion, err := t.Listen(ctx, &tor.ListenConf{
+	onion, err := t.Listen(listenCtx, &tor.ListenConf{
 		Version3:    true,
 		Key:         onionKey,
 		RemotePorts: []int{80},
 	})
 	if err != nil {
-		log.Panicf("❌ Onion error: %v", err)
+		log.Panicf("❌ Onion Listen Error: %v", err)
 	}
 	defer onion.Close()
 
-	// Clear onion key
 	for i := range onionKey {
 		onionKey[i] = 0
 	}
 
 	fmt.Println("═══════════════════════════════════════════════════════")
-	fmt.Println("✅ VAPORDROP ONLINE")
-	fmt.Printf("🔐 Dead Drop: %d day retention\n", int(MessageTTL.Hours()/24))
-	fmt.Println("🛡️  Zero-Knowledge: server never decrypts")
-	fmt.Println("🔒 Internal: BLAKE3 + Argon2id + Ed25519 (non-NIST)")
-	fmt.Printf("📦 Version: %s\n", Version)
-	fmt.Printf("🧅 http://%s.onion\n", onion.ID)
+	fmt.Printf("✅ VAPORDROP ONLINE\n")
+	fmt.Printf("🛡️  Key: Argon2id (64MB, 3 iter)\n")
+	fmt.Printf("🛡️  Protections: RAM Lock, Anti-Replay, Rate Limit, Padding\n")
+	fmt.Printf("📦 Message TTL: 7 days\n")
+	fmt.Printf("📁 File TTL: 7 days\n")
+	fmt.Printf("🔗 http://%v.onion\n", onion.ID)
 	fmt.Println("═══════════════════════════════════════════════════════")
 
-	// Start garbage collectors
 	go startMessageGC()
 	go startNonceGC()
 	go startRateLimitGC()
 	go startIdentityGC()
 	go startFileGC()
 
-	// HTTP routes
 	mux := http.NewServeMux()
 
-	// API endpoints
-	mux.HandleFunc("/api/send", securityHeaders(handleSend))
-	mux.HandleFunc("/api/fetch", securityHeaders(handleFetch))
-	mux.HandleFunc("/api/health", securityHeaders(handleHealth))
-	mux.HandleFunc("/api/register", securityHeaders(handleRegister))
-	mux.HandleFunc("/api/resolve/", securityHeaders(handleResolve))
-	mux.HandleFunc("/api/stats", securityHeaders(handleStats))
+	// Message endpoints
+	mux.HandleFunc("/api/send", handleSend)
+	mux.HandleFunc("/api/fetch", handleFetch)
+	mux.HandleFunc("/api/health", handleHealth)
+
+	// Identity registry
+	mux.HandleFunc("/api/register", handleRegister)
+	mux.HandleFunc("/api/resolve/", handleResolve)
+	mux.HandleFunc("/api/stats", handleStats)
 
 	// File transfer
-	mux.HandleFunc("/api/file/init", securityHeaders(handleFileInit))
-	mux.HandleFunc("/api/file/chunk/", securityHeaders(handleFileChunk))
-	mux.HandleFunc("/api/file/pending/", securityHeaders(handleFilePending))
-	mux.HandleFunc("/api/file/download/", securityHeaders(handleFileDownload))
-	mux.HandleFunc("/api/file/complete/", securityHeaders(handleFileComplete))
+	mux.HandleFunc("/api/file/init", handleFileInit)
+	mux.HandleFunc("/api/file/chunk/", handleFileChunk)
+	mux.HandleFunc("/api/file/pending/", handleFilePending)
+	mux.HandleFunc("/api/file/download/", handleFileDownload)
+	mux.HandleFunc("/api/file/complete/", handleFileComplete)
 
 	// Static files
 	fs := http.FileServer(http.Dir("./static"))
-	mux.Handle("/", securityHeaders(func(w http.ResponseWriter, r *http.Request) {
-		// Prevent directory listing
-		if strings.HasSuffix(r.URL.Path, "/") && r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		fs.ServeHTTP(w, r)
-	}))
+	mux.Handle("/", fs)
 
-	// Server config
 	server := &http.Server{
 		Handler:           mux,
-		ReadTimeout:       5 * time.Minute,
-		WriteTimeout:      5 * time.Minute,
-		IdleTimeout:       30 * time.Second,
+		ReadTimeout:       10 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
-		MaxHeaderBytes:    1 << 16, // 64KB
+		MaxHeaderBytes:    1 << 16,
 	}
 
-	log.Printf("🚀 Listening on hidden service...")
-
 	if err := server.Serve(onion); err != nil {
-		log.Panicf("❌ Server error: %v", err)
+		log.Panicf("❌ HTTP Error: %v", err)
 	}
 }
